@@ -1,5 +1,9 @@
 {
   "onlyCrypto": true,
+  "venues": {
+    "polymarket": true,
+    "kalshi": true
+  },
   "anthropicKey": "FROM_ENV",
   "mode": "paper",
   "createdAt": "2026-02-28T19:15:20.701Z",

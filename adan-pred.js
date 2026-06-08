@@ -4005,15 +4005,15 @@ async function doScan(state) {
   const prices = await fetchAllPrices();
   state.prices = prices;
 
-  // 2. Fetch Polymarket markets
+  // 2. Fetch Polymarket markets — gated by config.venues.polymarket
   state.status = 'Fetching Polymarket markets...'; render(state);
-  const rawMkts = await fetchPolymarkets(strat);
+  const rawMkts = (config.venues?.polymarket === false) ? [] : await fetchPolymarkets(strat);
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
 
-  // 2.01 Kalshi fallback: merge Kalshi crypto markets (training mode)
+  // 2.01 Kalshi: merge Kalshi crypto markets — gated by config.venues.kalshi
   try {
     state.status = 'Fetching Kalshi markets...'; render(state);
-    const kalshiMkts = await fetchKalshiMarkets();
+    const kalshiMkts = (config.venues?.kalshi === false) ? [] : await fetchKalshiMarkets();
     if (kalshiMkts.length > 0) {
       // Inject Binance price data into Kalshi markets
       const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT' };
