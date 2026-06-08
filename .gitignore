@@ -8,3 +8,6 @@ quant/venv/
 quant/__pycache__/
 quant/*.db
 quant/.ipynb_checkpoints/
+dashboard.log
+dashboard_dump.html
+*.webp

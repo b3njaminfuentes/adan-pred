@@ -1,15 +1,16 @@
 {
-  "name": "adan-skill",
+  "name": "adan-pred",
   "version": "1.1.0",
-  "description": "Web4 autonomous agent for Solana — PumpFun trading + Jupiter Prediction Markets. By Lord.",
+  "description": "ADAN — autonomous prediction-market agent for Polymarket (swarm round-table, evolutionary DNA). By Lord.",
   "type": "module",
   "bin": {
-    "adan-skill": "./adan.js",
     "adan-pred": "./adan-pred.js"
   },
   "scripts": {
-    "start": "node adan.js",
-    "pred": "node adan-pred.js"
+    "start": "node adan-pred.js",
+    "pred": "node adan-pred.js",
+    "dream": "node force_dream.js",
+    "backtest": "node backtest.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
