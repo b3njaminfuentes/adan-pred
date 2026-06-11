@@ -23,7 +23,7 @@ const MIN_EDGE = 0.02;  // TRAINING: 2% edge — toma casi todo para aprender
 const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k
 
 // Symbols to track on Binance
-const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'];
+const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 
 // ── Default Strategy ────────────────────────────────────────────────────────
 const DEFAULT_STRATEGY = {
@@ -41,7 +41,7 @@ const TREE_RULES = {
   // ADAN spawn rules:
   //   LVL 3 → primer hijo (1 máximo)
   //   LVL 4 → hasta 6 hijos
-  maxChildrenGen1: 12,  // max hijos directos — full coverage BTC/ETH/SOL/XRP × 5m/15m/1hr
+  maxChildrenGen1: 9,  // max hijos directos — full coverage BTC/ETH/SOL × 5m/15m/1hr
   maxChildrenAtLvl3: 1, // al LVL 3 solo puede tener 1 hijo
   // Nietos (Gen2 → Gen3): cada hijo puede tener hasta 2 nietos
   maxChildrenGen2: 2,   // max nietos por hijo (hijo necesita expChild >= 100)

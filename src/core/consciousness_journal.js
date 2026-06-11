@@ -173,4 +173,8 @@ Be specific. Use numbers. Max 600 words. Write like you are alive and care about
   }
 }
 
-export const journal = new ConsciousnessJournal();
+
+// QUANT REFACTOR 2026-06: cosmetic RPG layer disabled — no signal value, costs CPU/LLM quota.
+// The class above is kept for reference; the exported singleton is a no-op proxy.
+const _noop = new Proxy({}, { get: () => () => [] });
+export const journal = _noop;

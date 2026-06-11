@@ -158,68 +158,6 @@ function renderTreePanel(pnl, prices) {
     });
   }
 
-  // ── v4.0: Category children (LLM-informed) ──
-  const CATEGORY_ICONS = { crypto: '🪙', politics: '🏛️', sports: '⚽', macro: '📊', events: '🌐' };
-  const CATEGORY_CHILDREN = ['politics-daily', 'sports-daily', 'macro-weekly', 'events-daily'];
-  const categoryIntels = CATEGORY_CHILDREN.map(specId => {
-    // Read all intel files matching this category child
-    try {
-      const files = fs.readdirSync(INTEL_DIR).filter(f => f.startsWith(specId));
-      if (files.length === 0) return null;
-      const latest = files.map(f => {
-        try { return JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8')); } catch { return null; }
-      }).filter(Boolean).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
-      return latest;
-    } catch { return null; }
-  }).filter(Boolean);
-
-  if (categoryIntels.length > 0 || CATEGORY_CHILDREN.length > 0) {
-    console.log(SEP(B));
-    console.log(row(B + BOLD + '  🌐 CATEGORY DYNASTY' + X + D + '  │  Track: ' + X + M + 'LLM' + X + D + '  │  Multi-Market v4.0' + X));
-    console.log(SEP(B));
-
-    for (const specId of CATEGORY_CHILDREN) {
-      const cat = specId.split('-')[0]; // politics, sports, macro, events
-      const icon = CATEGORY_ICONS[cat] || '🌐';
-      const intel = categoryIntels.find(i => (i.spec || '').startsWith(specId));
-      const cLearn = learnData[specId];
-      const cGen = cLearn?.dna?.generation || 1;
-      const cResolved = cLearn?.totalResolved || 0;
-      const cAcc = cResolved >= 3 ? Math.round((cLearn?.correct || 0) / cResolved * 100) : null;
-      const accCol = cAcc === null ? D : cAcc >= 55 ? G : cAcc >= 40 ? Y : R;
-      const accStr = cAcc !== null ? accCol + BOLD + cAcc + '%' + X : D + '--' + X;
-
-      if (intel) {
-        const sig = intel.signal;
-        const sigCol = sig?.dir === 'UP' ? G : sig?.dir === 'DOWN' ? R : Y;
-        const sigIcon = sig?.dir === 'UP' ? '▲' : sig?.dir === 'DOWN' ? '▼' : '●';
-        const age = Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000);
-        const title = (intel.market?.title || '').slice(0, 32);
-        console.log(row(
-          '  ' + B + '  ├── ' + X + icon + ' ' +
-          C + BOLD + specId.padEnd(15) + X +
-          sigCol + BOLD + sigIcon + ' ' + (sig?.dir || '?').padEnd(4) + X +
-          D + ' c:' + (sig?.conf || '--') + '%' + X +
-          D + ' e:' + (sig?.edge || '--') + '%' + X +
-          ' ' + D + 'g' + X + Y + cGen + X +
-          ' ' + D + 'acc:' + X + accStr + D + '(' + cResolved + ')' + X +
-          D + ' ' + age + 'm' + X
-        ));
-        if (title) {
-          console.log(row('  ' + B + '  │   ' + X + D + '  "' + title + '"' + X));
-        }
-      } else {
-        console.log(row(
-          '  ' + B + '  ├── ' + X + icon + ' ' +
-          C + BOLD + specId.padEnd(15) + X +
-          D + '  ···  waiting for scan' + X +
-          ' ' + D + 'g' + X + Y + cGen + X +
-          ' ' + D + 'acc:' + X + accStr + D + '(' + cResolved + ')' + X
-        ));
-      }
-    }
-  }
-
   // Signal consensus bar
   if (children.length > 0) {
     const signals = children.map(c => readChildIntel(c.spec)?.signal).filter(Boolean);
@@ -3421,7 +3359,6 @@ function drawAdanWorld() {
   ctx.font = "7px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
   const labels = { adan: '\u25C8', apple: 'A', snake: 'S', eva: 'E' };
-  const catLabels = { 'politics-daily': 'P', 'sports-daily': 'S', 'macro-weekly': 'M', 'events-daily': 'E' };
 
   (cw_agents || []).forEach(a => {
     const color = CW_COLORS[a.state] || '#1a4a8a';
@@ -3477,7 +3414,7 @@ function drawAdanWorld() {
       ctx.fillStyle = '#ffffff';
       ctx.globalAlpha = 0.9;
       ctx.font = isParent ? "bold 8px 'Press Start 2P', monospace" : "6px 'Press Start 2P', monospace";
-      const lbl = labels[a.id] || catLabels[a.id] || (a.name || a.id || '?')[0].toUpperCase();
+      const lbl = labels[a.id] || (a.name || a.id || '?')[0].toUpperCase();
       ctx.fillText(lbl, px + cellW / 2, py - 4);
       ctx.restore();
     }
@@ -3536,19 +3473,6 @@ setInterval(stepAdanWorld, 200);
       return;
     }
 
-
-    if (req.url === '/api/web4') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      import('./adan-web4-identity.js').then(module => {
-        module.getWeb4DashboardPayload(module.initAdanKeypair ? null : null).then(payload => {
-          res.end(JSON.stringify(payload));
-        }).catch(err => res.end(JSON.stringify({ error: err.message })));
-      }).catch(err => {
-        console.error("Web4 module missing, ignoring:", err.message);
-        res.end(JSON.stringify({ registered: false, error: 'Module missing run `npm install 8004-solana`' }));
-      });
-      return;
-    }
 
     if (req.url === '/api/crossover' && req.method === 'POST') {
       let body = '';
@@ -3669,45 +3593,6 @@ setInterval(stepAdanWorld, 200);
         } catch { }
         return { ...child, intel, grandChildren, childExp, childSignals, dna, childPnl };
       });
-
-      // ── v4.1: Category Children (LLM track) ──
-      const CATEGORY_SPECS = [
-        { id: 'politics-daily', category: 'politics' },
-        { id: 'sports-daily', category: 'sports' },
-        { id: 'macro-weekly', category: 'macro' },
-        { id: 'events-daily', category: 'events' },
-      ];
-      const categoryChildEntries = [];
-      for (const spec of CATEGORY_SPECS) {
-        let signal = null, market = null;
-        try {
-          const files = fs.readdirSync(INTEL_DIR).filter(f => f.startsWith(spec.id));
-          if (files.length > 0) {
-            const latest = files.map(f => {
-              try { return JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8')); } catch { return null; }
-            }).filter(Boolean).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
-            if (latest && (Date.now() - new Date(latest.ts).getTime()) / 60000 <= 30) {
-              signal = latest.signal || null;
-              market = latest.market || null;
-            }
-          }
-        } catch { }
-        const stats = childLearning.getChildStats ? childLearning.getChildStats(spec.id) : null;
-        const learn = (childLearning.learning || {})[spec.id];
-        categoryChildEntries.push({
-          spec: spec.id,
-          name: spec.id,
-          isCategory: true,
-          track: 'llm',
-          category: spec.category,
-          signal,
-          market,
-          accuracy: stats?.accuracy ?? (learn?.totalResolved > 0 ? Math.round((learn.correct || 0) / learn.totalResolved * 100) : null),
-          generation: learn?.dna?.generation || 1,
-          totalResolved: learn?.totalResolved || 0,
-          correct: learn?.correct || 0,
-        });
-      }
 
       // Auto-reset result → idle after RESULT_SHOW_MS so the flow goes back to monitoring
       if (_dashboardState?.mode === 'result' && _resultAt && (Date.now() - _resultAt) > RESULT_SHOW_MS) {
@@ -3859,7 +3744,7 @@ setInterval(stepAdanWorld, 200);
         ts: new Date().toISOString(),
         pnl, calib, positions: pos,
         xp: { ...xp, title: levelTitle(xp.level) },
-        children: [...parentIntelEntries, ...childrenWithIntel, ...categoryChildEntries],
+        children: [...parentIntelEntries, ...childrenWithIntel],
         state: {
           ...enrichedState,
           currentBrain: brainManager.currentBrain,

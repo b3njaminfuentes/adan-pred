@@ -1,8 +1,7 @@
 {
   "onlyCrypto": true,
   "venues": {
-    "polymarket": true,
-    "kalshi": true
+    "polymarket": true
   },
   "anthropicKey": "FROM_ENV",
   "mode": "paper",

@@ -57,9 +57,9 @@ import {
   expit, logit, classifyMarket, checkMarketResolution
 } from './src/api/polymarket.js';
 
-import { fetchKalshiMarkets, checkKalshiResolution } from './src/api/kalshi.js';
 import { externalData } from './src/api/external_data.js';
 import { polymarketWS } from './src/api/polymarket_ws.js';
+import { reportPaperBet, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty } from './src/api/brier-reporter.js';
 
 import {
   TOP, BOT, row, sep, trow, sparkline, renderTreePanel, startDashboard, render,
@@ -97,7 +97,7 @@ import { kmeansRegime } from './src/core/regime_detector.js';
 import { featureImportance } from './src/core/feature_importance.js';
 import { shapleyAnalyzer } from './src/ml/shapley_values.js';
 import { riskOfRuin } from './src/core/risk_of_ruin.js';
-// ── Hyperliquid Perpetual Futures Layer REMOVED — Kalshi-only mode ──
+// ── Hyperliquid Perpetual Futures Layer REMOVED — Polymarket-only mode ──
 import { wilmott } from './src/core/wilmott_quant.js';
 import { soulMemory } from './src/core/soul_memory_v2.js';
 import { selfOptimizer } from './src/core/self_optimizer.js';
@@ -295,7 +295,7 @@ async function fetchCryptoNews() {
       source: p.source || '?',
       sentiment: bearWords.test(p.title) ? 'BEARISH' : bullWords.test(p.title) ? 'BULLISH' : 'NEUTRAL',
       ts: new Date((p.published_on || 0) * 1000).toISOString(),
-      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|XRP/i.test(c)).join(',') || 'CRYPTO'
+      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL/i.test(c)).join(',') || 'CRYPTO'
     }));
   } catch { return null; }
 }
@@ -527,15 +527,12 @@ const CHILD_SPECS = [
   { id: 'btc-5min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5 },
   { id: 'eth-5min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 5 },
   { id: 'sol-5min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5 },
-  { id: 'xrp-5min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5 },
   { id: 'btc-15min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15 },
   { id: 'eth-15min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 15 },
   { id: 'sol-15min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15 },
-  { id: 'xrp-15min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15 },
   { id: 'btc-1hr', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60 },
   { id: 'eth-1hr', asset: 'ETHUSDT', assetName: 'eth', windowMin: 60 },
   { id: 'sol-1hr', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60 },
-  { id: 'xrp-1hr', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60 },
   // Level 3: Adversarial contrarian children — detect herding bias
   { id: 'btc-5min-contra', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5, spec: 'BTC-5min-contra', contrarian: true },
   { id: 'sol-5min-contra', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, spec: 'SOL-5min-contra', contrarian: true },
@@ -875,10 +872,6 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-1min-mom', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: '1min-momentum' },
     { id: 'sol-orderbook', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: 'orderbook' },
   ],
-  'XRP-5min': [
-    { id: 'xrp-5min-mom', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: '1min-momentum' },
-    { id: 'xrp-5min-vol', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: 'volume-spike' },
-  ],
   'BTC-15min': [
     { id: 'btc-15min-bb', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15, focus: 'bollinger' },
     { id: 'btc-15min-macd', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15, focus: 'macd-cross' },
@@ -890,10 +883,6 @@ const GRANDCHILD_SPECS = {
   'SOL-15min': [
     { id: 'sol-15min-bb', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'bollinger' },
     { id: 'sol-15min-macd', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'macd-cross' },
-  ],
-  'XRP-15min': [
-    { id: 'xrp-15min-bb', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'bollinger' },
-    { id: 'xrp-15min-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'rsi-extreme' },
   ],
   'BTC-1hr': [
     { id: 'btc-1hr-trend', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60, focus: 'trend-follow' },
@@ -907,270 +896,7 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-1hr-trend', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'trend-follow' },
     { id: 'sol-1hr-vol', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'volume-spike' },
   ],
-  'XRP-1hr': [
-    { id: 'xrp-1hr-trend', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'trend-follow' },
-    { id: 'xrp-1hr-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'rsi-extreme' },
-  ],
 };
-
-// ══════════════════════════════════════════════════════════════════════════════
-// ── v4.0: CATEGORY CHILDREN — LLM-informed non-crypto market scanners ──────
-// ══════════════════════════════════════════════════════════════════════════════
-
-const CHILD_SPECS_CATEGORY = [
-  { id: 'politics-daily', category: 'politics', track: 'llm', scanInterval: 3600000 },
-  { id: 'sports-daily', category: 'sports', track: 'llm', scanInterval: 3600000 },
-  { id: 'macro-weekly', category: 'macro', track: 'llm', scanInterval: 14400000 },
-  { id: 'events-daily', category: 'events', track: 'llm', scanInterval: 3600000 },
-];
-
-const GRANDCHILD_SPECS_CATEGORY = {
-  'politics-daily': [
-    { id: 'us-elections', category: 'politics', focus: 'US elections and primaries' },
-    { id: 'global-politics', category: 'politics', focus: 'international politics and diplomacy' },
-    { id: 'regulatory', category: 'politics', focus: 'regulation and policy changes' },
-  ],
-  'sports-daily': [
-    { id: 'nfl-scanner', category: 'sports', focus: 'NFL games and playoffs' },
-    { id: 'nba-scanner', category: 'sports', focus: 'NBA games and championships' },
-    { id: 'soccer-scanner', category: 'sports', focus: 'soccer/football worldwide' },
-  ],
-  'macro-weekly': [
-    { id: 'central-bank', category: 'macro', focus: 'Fed, ECB, central bank decisions' },
-    { id: 'inflation-tracker', category: 'macro', focus: 'CPI, PPI, inflation data' },
-    { id: 'employment-tracker', category: 'macro', focus: 'jobs reports and unemployment' },
-  ],
-  'events-daily': [
-    { id: 'tech-launches', category: 'events', focus: 'tech product launches and earnings' },
-    { id: 'weather-tracker', category: 'events', focus: 'extreme weather and natural disasters' },
-    { id: 'entertainment', category: 'events', focus: 'awards, entertainment, cultural events' },
-  ],
-};
-
-// Track last scan time per category child
-const _categoryScanTimestamps = {};
-
-// v4.1 Fix 4: Category trade candidates from LLM children
-let _categoryTradeCandidates = [];
-const CATEGORY_MAX_POSITIONS = 3;
-const CATEGORY_MAX_STAKE = 150;
-
-/**
- * categoryChildSignal — LLM-informed signal for non-crypto markets
- * Builds a prompt with external context and asks Gemma to estimate probability
- */
-async function categoryChildSignal(market, contextData, dna) {
-  const confidenceFloor = dna?.confidenceFloor ?? 55;
-  const edgeThresholdPct = dna?.edgeThresholdPct ?? 10;
-
-  const prompt = `You are a prediction market analyst. Analyze this market and estimate the probability of YES.
-
-MARKET: "${market.title}"
-Current YES price: ${(market.yesPrice * 100).toFixed(1)}%
-Liquidity: $${market.liquidity?.toFixed(0) || '?'}
-
-CONTEXT DATA:
-${contextData}
-
-Based on the context, estimate:
-1. Your probability estimate for YES (0-100%)
-2. Direction: YES or NO (which side has edge)
-3. Confidence in your estimate (0-100%)
-4. Brief reason (1 sentence)
-
-Respond in JSON format:
-{"probability": 55, "direction": "YES", "confidence": 65, "reason": "..."}`;
-
-  try {
-    const response = await routeLLM({
-      prompt,
-      weight: 'Light',
-      reason: `category-${market._category}`
-    });
-
-    // Parse JSON from response
-    const jsonMatch = response.match(/\{[\s\S]*?"probability"[\s\S]*?\}/);
-    if (!jsonMatch) return null;
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    const prob = parseFloat(parsed.probability) || 50;
-    const conf = parseFloat(parsed.confidence) || 50;
-    const dir = (parsed.direction || '').toUpperCase();
-
-    // Apply DNA filters
-    if (conf < confidenceFloor) return null;
-
-    // Calculate edge
-    const marketProb = market.yesPrice * 100;
-    const edgePct = dir === 'YES' ? prob - marketProb : marketProb - (100 - prob);
-    if (Math.abs(edgePct) < edgeThresholdPct) return null;
-
-    return {
-      direction: dir === 'YES' ? 'UP' : 'DOWN',
-      confidence: Math.round(conf),
-      probability: Math.round(prob),
-      edge: parseFloat(edgePct.toFixed(1)),
-      reason: parsed.reason || 'LLM analysis',
-      suggestedSide: dir,
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-/**
- * runCategoryChildScanner — Scans markets for a specific category
- */
-async function runCategoryChildScanner(spec, allMarkets) {
-  try {
-    if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
-
-    // Check quota
-    if (!quota.canUseGemma() || !quota.canUseCategory(spec.category)) return [];
-
-    const dna = childLearning.getChildDNA(spec.id, 'llm');
-    const maxMarkets = dna.maxMarketsPerCycle || 3;
-    const minLiquidity = dna.skipIfLiquidityBelow || 1000;
-
-    // Filter markets by category, sort by liquidity
-    const categoryMarkets = allMarkets
-      .filter(m => m._category === spec.category && (m.liquidity || 0) >= minLiquidity)
-      .sort((a, b) => (b.liquidity || 0) - (a.liquidity || 0))
-      .slice(0, maxMarkets);
-
-    if (categoryMarkets.length === 0) return [];
-
-    const results = [];
-
-    for (const market of categoryMarkets) {
-      // Fetch external context
-      const contextData = await externalData.fetchContextForCategory(spec.category, market.title);
-
-      // Get LLM signal
-      const signal = await categoryChildSignal(market, contextData, dna);
-
-      // Consume quota
-      quota.consumeGemma();
-      quota.consumeCategory(spec.category);
-
-      if (!signal) continue;
-
-      // Record shadow prediction
-      childLearning.recordPrediction(spec.id, {
-        direction: signal.direction,
-        confidence: signal.confidence,
-        asset: spec.category,
-        marketId: market.id,
-        marketCloseTime: market.closesAt || new Date(Date.now() + 24 * 3600000).toISOString(),
-        reasons: [signal.reason],
-        regime: 'UNKNOWN',
-        track: 'llm',
-        category: spec.category,
-      });
-
-      // Write intel file
-      const intel = {
-        spec: spec.id,
-        category: spec.category,
-        track: 'llm',
-        ts: new Date().toISOString(),
-        market: {
-          id: market.id,
-          title: market.title,
-          yesPrice: market.yesPrice,
-          liquidity: market.liquidity,
-          closesAt: market.closesAt,
-        },
-        signal: {
-          dir: signal.direction,
-          conf: signal.confidence,
-          probability: signal.probability,
-          edge: signal.edge,
-          reason: signal.reason,
-          suggestedSide: signal.suggestedSide,
-        },
-      };
-
-      const intelPath = path.join(INTEL_DIR, `${spec.id}-${market.id.slice(0, 8)}.json`);
-      fs.writeFileSync(intelPath, JSON.stringify(intel, null, 2));
-      results.push(intel);
-
-      // v4.1 Fix 4: Collect high-confidence signals as trade candidates
-      if (signal.confidence >= 65 && signal.edge >= 5) {
-        _categoryTradeCandidates.push({
-          market,
-          signal,
-          spec,
-          ts: Date.now(),
-        });
-        console.log(`[CATEGORY TRADE] 🎯 Candidate: "${market.title.slice(0, 40)}" conf:${signal.confidence}% edge:${signal.edge}%`);
-      }
-
-      console.log(`[CATEGORY][${spec.category.toUpperCase()}] ${signal.suggestedSide} on "${market.title.slice(0, 50)}" | conf:${signal.confidence}% edge:${signal.edge}%`);
-    }
-
-    return results;
-  } catch (e) {
-    console.error(`[CATEGORY] Error scanning ${spec.category}: ${e.message}`);
-    return [];
-  }
-}
-
-/**
- * v4.1 Fix 4: Process category trade candidates — real trades from LLM children
- * Takes best candidates by edge, caps stake, and executes via evaluate_and_trade
- */
-async function processCategoryTrades(prices, state) {
-  const config = loadConfig();
-  if (config.onlyCrypto) {
-    _categoryTradeCandidates = [];
-    return;
-  }
-  if (_categoryTradeCandidates.length === 0) return;
-
-  // Count existing category positions (non-crypto)
-  const posData = loadPositions();
-  const positions = posData.open || [];
-  const cryptoAssets = ['btc', 'eth', 'sol', 'xrp'];
-  const categoryPositions = positions.filter(p => !cryptoAssets.includes((p.asset || '').toLowerCase()));
-
-  const availableSlots = CATEGORY_MAX_POSITIONS - categoryPositions.length;
-  if (availableSlots <= 0) {
-    console.log(`[CATEGORY TRADE] 🚫 ${categoryPositions.length}/${CATEGORY_MAX_POSITIONS} category slots full — skipping`);
-    _categoryTradeCandidates = [];
-    return;
-  }
-
-  // Sort by edge descending, take best candidates
-  const candidates = _categoryTradeCandidates
-    .filter(c => (Date.now() - c.ts) < 600000) // max 10 min old
-    .sort((a, b) => b.signal.edge - a.signal.edge)
-    .slice(0, availableSlots);
-
-  for (const cand of candidates) {
-    const { market, signal } = cand;
-    const side = signal.suggestedSide || (signal.direction === 'UP' ? 'YES' : 'NO');
-    const edge = signal.edge / 100;
-
-    console.log(`[CATEGORY TRADE] 🎰 Executing ${side} on "${market.title.slice(0, 50)}" | edge:${signal.edge}% conf:${signal.confidence}%`);
-
-    const catDecision = {
-      action: 'BET',
-      market: { ...market, _categoryTrade: true },
-      side,
-      myProb: signal.confidence / 100,
-      edge: signal.edge / 100,
-      edge_pct: signal.edge,
-      confidence: signal.confidence,
-      confidence_pct: signal.confidence,
-      thought: `[CATEGORY TRADE] LLM child signal: ${side} conf:${signal.confidence}% edge:${signal.edge}%`,
-    };
-
-    await evaluate_and_trade(catDecision, prices, state);
-  }
-
-  _categoryTradeCandidates = [];
-}
 
 // Grandchild signal — same rule-based but focuses on one indicator
 function grandchildSignal(d, focus) {
@@ -1699,30 +1425,6 @@ async function runAllChildScanners(allPrices, allMarkets) {
         // console.error(`Error processing grandchild for child ${child.spec}:`, e);
       }
     }
-  }
-
-  // ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
-  if (config.onlyCrypto) return results.filter(Boolean); // Skip categories in crypto-only mode
-
-  const now = Date.now();
-  const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
-    const lastScan = _categoryScanTimestamps[spec.id] || 0;
-    if (now - lastScan < spec.scanInterval) return []; // Respect scan interval
-    _categoryScanTimestamps[spec.id] = now;
-
-    // Initialize LLM child learning if needed
-    childLearning.initLLMChild(spec.id);
-
-    return runCategoryChildScanner(spec, allMarkets);
-  });
-
-  try {
-    const categoryResults = await Promise.all(categoryPromises);
-    for (const catResult of categoryResults) {
-      if (Array.isArray(catResult)) results.push(...catResult);
-    }
-  } catch (e) {
-    console.error(`[CATEGORY] Error in category scanners: ${e.message}`);
   }
 
   return results.filter(Boolean);
@@ -2407,8 +2109,6 @@ async function think(markets, prices, pnl, openPos, state) {
   const candidates = markets
     .filter(m => {
       if (openIds.has(m.id)) return false;
-      // Kalshi markets report $0 liquidity — bypass filter for paper training
-      if (m._isKalshi) return true;
       return m.liquidity >= (strat.minLiquidity || 500);
     })
     .slice(0, strat.maxMarketsCheck);
@@ -2696,7 +2396,13 @@ async function think(markets, prices, pnl, openPos, state) {
   // TRAINING MODE: Use self-optimizer only — ES thresholds are for live safety
   const isTraining = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING';
   const effectiveConfGate = isTraining ? optParams.confGate : Math.max(optParams.confGate, esGateParams.confidenceFloor || 0);
-  const effectiveMinEdge = isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0);
+  // Brier feedback: if the protocol says ADAN is miscalibrated, demand more edge
+  const brierPenalty = brierEdgePenalty();
+  const myScore = getMyBrierScore();
+  if (brierPenalty > 0) {
+    console.log(`[BRIER GATE] 🧠 brier=${myScore?.brier?.toFixed(3)} → +${(brierPenalty * 100).toFixed(0)}% edge required`);
+  }
+  const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
   const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
 
   // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
@@ -3275,12 +2981,6 @@ async function evaluate_and_trade(decision, prices, state) {
     console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} Half-Kelly: edge=${(edge * 100).toFixed(1)}% f*=${(fullKelly * 100).toFixed(1)}% → $${rawChildStake} × copula(${copulaStakeAdj.toFixed(2)}) = $${stake}`);
   }
 
-  // v4.1 Fix 4: Cap stake for category trades
-  if (market._categoryTrade) {
-    stake = Math.min(stake, CATEGORY_MAX_STAKE);
-    console.log(`[CATEGORY TRADE] 📉 Stake capped to $${stake} (max $${CATEGORY_MAX_STAKE})`);
-  }
-
   // ═══ Concept #8C: UCB Exploration stake cap — max 3% of fund on exploration markets ═══
   if (market._ucb && market._ucb.is_exploration) {
     const explorationMax = ucbExplorer.getExplorationMaxStake(pnlNow.fund || 5000);
@@ -3352,6 +3052,10 @@ async function evaluate_and_trade(decision, prices, state) {
 
   // ═══ FEATURE ATTRIBUTION: Record entry features ═══
   const tradeId = Date.now().toString();
+
+  // ═══ BRIER PROTOCOL: report this paper bet to the shadow indexer ═══
+  reportPaperBet({ market, side, stake, tradeId }).catch(() => { });
+
   try {
     const fgData = state?.prices?._meta?.fearGreed;
     featureTracker.recordEntry(tradeId, featureTracker.extractFeatures({
@@ -3607,25 +3311,16 @@ async function checkResolutions() {
     let closed = false;
     let yesWon = false;
 
-    if (p.marketId && p.marketId.startsWith('KX')) {
-      // Kalshi resolution fetching
-      const kRes = await checkKalshiResolution(p.marketId);
-      console.log(`[KALSHI DEBUG] Resolving ${p.marketId}: kRes =`, kRes);
-      if (!kRes || !kRes.closed) continue;
-      closed = true;
-      yesWon = kRes.resolution === 'YES';
-    } else {
-      // Polymarket resolution fetching
-      const data = await polyFetch('/markets/' + p.marketId);
-      if (!data) continue;
-      closed = data.closed || data.archived || data.active === false;
-      if (!closed) continue;
+    // Polymarket resolution fetching
+    const data = await polyFetch('/markets/' + p.marketId);
+    if (!data) continue;
+    closed = data.closed || data.archived || data.active === false;
+    if (!closed) continue;
 
-      let outcomePrices;
-      try { outcomePrices = typeof data.outcomePrices === 'string' ? JSON.parse(data.outcomePrices) : data.outcomePrices; }
-      catch { outcomePrices = [0.5, 0.5]; }
-      yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
-    }
+    let outcomePrices;
+    try { outcomePrices = typeof data.outcomePrices === 'string' ? JSON.parse(data.outcomePrices) : data.outcomePrices; }
+    catch { outcomePrices = [0.5, 0.5]; }
+    yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
     const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
     // Slippage simulation: dynamic based on liquidity (v6.1 — was fixed 1.5%)
@@ -4001,6 +3696,9 @@ async function doScan(state) {
   }
 
   // 1. Fetch Binance prices
+  // Feedback loop: refresh own Brier Score from the protocol (cached 10 min)
+  refreshMyBrierScore().catch(() => {});
+
   state.status = 'Fetching Binance prices...'; render(state);
   const prices = await fetchAllPrices();
   state.prices = prices;
@@ -4009,37 +3707,6 @@ async function doScan(state) {
   state.status = 'Fetching Polymarket markets...'; render(state);
   const rawMkts = (config.venues?.polymarket === false) ? [] : await fetchPolymarkets(strat);
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
-
-  // 2.01 Kalshi: merge Kalshi crypto markets — gated by config.venues.kalshi
-  try {
-    state.status = 'Fetching Kalshi markets...'; render(state);
-    const kalshiMkts = (config.venues?.kalshi === false) ? [] : await fetchKalshiMarkets();
-    if (kalshiMkts.length > 0) {
-      // Inject Binance price data into Kalshi markets
-      const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT' };
-      for (const km of kalshiMkts) {
-        const sym = symMap[km.asset];
-        if (sym && prices[sym]) km.priceData = prices[sym];
-        // Calculate rough edge using price distance
-        if (km.targetPrice && km.priceData?.price) {
-          const dist = Math.abs(km.targetPrice - km.priceData.price) / km.priceData.price;
-          km.roughEdge = dist < 0.01 ? 0.15 : dist < 0.02 ? 0.10 : dist < 0.05 ? 0.05 : 0;
-        }
-      }
-      // Add Kalshi markets that don't duplicate existing Polymarket ones
-      const existingIds = new Set(allMarkets.map(m => m.id));
-      let added = 0;
-      for (const km of kalshiMkts) {
-        if (!existingIds.has(km.id)) {
-          allMarkets.push(km);
-          added++;
-        }
-      }
-      if (added > 0) console.log(`[KALSHI] Added ${added} markets to ADAN pool (training mode)`);
-    }
-  } catch (e) {
-    console.log('[KALSHI] Fetch error (non-critical):', e.message);
-  }
 
   // 2.05 Polymarket WebSocket: subscribe to all active market token IDs
   try {
@@ -4056,15 +3723,13 @@ async function doScan(state) {
     runMesaRedonda(prices, allMarkets, pnl);
   } catch (e) { console.error('[MESA REDONDA] Error:', e.message); }
 
-  // Separate: ACTIVE NOW (close <4h, or Kalshi <48h) vs FUTURE
+  // Separate: ACTIVE NOW (close <4h) vs FUTURE
   const nowMs2 = Date.now();
   const activeNow = allMarkets.filter(m => {
     if (!m.closesAt) return false;
     const msLeft = new Date(m.closesAt) - nowMs2;
     if (msLeft <= 0) return false; // already closed
-    // Kalshi markets: consider active if closing within 48h (they have longer horizons)
-    if (m._isKalshi) return msLeft < 48 * 3600 * 1000;
-    // Polymarket: original 4h window
+    // Polymarket: 4h window
     return msLeft < 4 * 3600 * 1000;
   });
   const future = allMarkets.filter(m => !m.closesAt || !activeNow.includes(m));
@@ -4221,9 +3886,9 @@ async function doScan(state) {
       }
     }
 
-    // ── NIGHT WATCH BROAD SCANNER (disabled in Kalshi-only mode) ──
+    // ── NIGHT WATCH BROAD SCANNER (disabled — Polymarket-only mode) ──
     if (strat.onlyCrypto || config.onlyCrypto) {
-      // Kalshi crypto markets are in the main pool, proceed directly to evaluation
+      // Crypto markets are in the main pool, proceed directly to evaluation
       // Do NOT return early.
     } else {
       // Fetch ALL active markets regardless of close time or crypto tag to train the models locally
@@ -4566,9 +4231,6 @@ async function doScan(state) {
     await evaluate_and_trade(decision, prices, state);
   }
 
-  // v4.1 Fix 4: Process category trade candidates from LLM children
-  await processCategoryTrades(prices, state);
-
   render(state);
 }
 
@@ -4678,8 +4340,9 @@ async function main() {
   loadSoul();
   startDashboard(brainManager);
 
-  // ── Kalshi-Only Mode — No perps ──
-  console.log(M + '🎯 ADAN Kalshi-Only Training Mode — prediction markets focused' + X);
+  // ── Polymarket-Only Mode — No perps ──
+  console.log(M + '🎯 ADAN Polymarket Crypto Training Mode — BTC/ETH/SOL up-or-down' + X);
+  refreshMyBrierScore().catch(() => {}); // boot-time self-score from Brier Protocol
 
   const state = {
     status: 'Starting...', mode: 'idle', thought: null,
@@ -4762,9 +4425,9 @@ async function main() {
 
       // ── KALSHI PREDICTION MARKET TRAINING ──
       if (lastHumanState !== 'NEWS_SHOCK') {
-        // Kalshi scan is handled by the main scanKalshi flow above
+        // Polymarket scan is handled by the main scan flow above
         // No perps — pure prediction market training
-        console.log('[SCAN] ✅ Kalshi cycle complete');
+        console.log('[SCAN] ✅ Polymarket cycle complete');
       } else {
         console.log('[HUMAN] ⛔ NEWS_SHOCK detected — skipping scan cycle');
       }
@@ -4832,8 +4495,7 @@ async function main() {
             // v7: Apply meta-calibration to fast path too
             const childId = nm.asset === 'btc' ? 'BTC-5min'
               : nm.asset === 'sol' ? 'SOL-5min'
-                : nm.asset === 'xrp' ? 'XRP-5min'
-                  : 'ETH-5min';
+                : 'ETH-5min';
             const childIntel = readLatestChildIntel(childId);
             // v7: Apply meta-calibration to fast path too
             const mcFast = loadMetaCalib();

@@ -1,7 +1,7 @@
 {
   "name": "adan-pred",
   "version": "1.1.0",
-  "description": "ADAN — autonomous prediction-market agent for Polymarket (swarm round-table, evolutionary DNA). By Lord.",
+  "description": "ADAN \u2014 autonomous prediction-market agent for Polymarket (swarm round-table, evolutionary DNA). By Lord.",
   "type": "module",
   "bin": {
     "adan-pred": "./adan-pred.js"
@@ -14,8 +14,6 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@solana/web3.js": "^1.98.4",
-    "8004-solana": "^0.7.8",
     "vader-sentiment": "^1.1.3",
     "ws": "^8.19.0"
   }

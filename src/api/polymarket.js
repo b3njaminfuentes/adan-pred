@@ -1,14 +1,45 @@
 import { POLYMARKET_API } from '../core/config.js';
+import dns from 'dns';
+import https from 'https';
+import { promisify } from 'util';
+
+// ISP blocks gamma-api.polymarket.com at resolver level — bypass via 1.1.1.1
+dns.setServers(['1.1.1.1', '8.8.8.8']);
+const resolve4 = promisify(dns.resolve4);
+const POLY_HOST = 'gamma-api.polymarket.com';
+let _polyIP = null;
+
+async function getPolyIP() {
+  if (_polyIP) return _polyIP;
+  try { _polyIP = (await resolve4(POLY_HOST))[0]; }
+  catch { _polyIP = '104.18.34.205'; }
+  return _polyIP;
+}
 
 // ── Polymarket helpers ───────────────────────────────────────────────────────
+function httpsGet(ip, path) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: ip, port: 443, path, method: 'GET',
+      servername: POLY_HOST,
+      headers: { Host: POLY_HOST, Accept: 'application/json' },
+      timeout: 8000,
+    }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
+
 async function polyFetch(endpoint) {
   try {
-    const r = await fetch(POLYMARKET_API + endpoint, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(5000)
-    });
-    if (!r.ok) return null;
-    return await r.json();
+    const ip = await getPolyIP();
+    const path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+    return await httpsGet(ip, path);
   } catch { return null; }
 }
 
@@ -42,9 +73,9 @@ async function fetchPolymarkets(strat) {
   const seen = new Set();
   const all = [];
 
-  // ── Priority 1: Live 5M/15M/1H/4H "Up or Down" markets — BTC, ETH, SOL, XRP ──
+  // ── Live 5M/15M/1H/4H "Up or Down" markets — BTC, ETH, SOL ──
   // Fetch WITHOUT ordering to get ALL active events including live ones
-  await Promise.all(['bitcoin', 'ethereum', 'solana', 'ripple'].map(async asset => {
+  await Promise.all(['bitcoin', 'ethereum', 'solana'].map(async asset => {
     const data = await polyFetch(`/events?tag_slug=${asset}&limit=200&active=true&closed=false`);
     const events = Array.isArray(data) ? data : (data?.events || data?.data || []);
     for (const ev of events) {
@@ -63,38 +94,9 @@ async function fetchPolymarkets(strat) {
     }
   }));
 
-  // ── Priority 2: Bulk markets sorted by volume, client-side crypto filter ──
-  await Promise.all([0, 100, 200, 300, 400].map(async offset => {
-    const data = await polyFetch(`/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false&offset=${offset}`);
-    const list = Array.isArray(data) ? data : (data?.markets || []);
-    for (const m of list) {
-      if (seen.has(m.id)) continue;
-      const title = (m.question || m.title || '');
-      if (!CRYPTO_RE.test(title)) continue; // Only crypto markets
-      seen.add(m.id);
-      const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
-      if (endMs <= nowMs || endMs > maxMs) continue;
-      all.push(m);
-    }
-  }));
-
-  // ── Priority 3 (v4.0): ALL categories — politics, sports, macro, events ──
-  // Fetch high-volume markets WITHOUT crypto filter, classify each
-  await Promise.all([0, 100].map(async offset => {
-    const data = await polyFetch(`/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false&offset=${offset}`);
-    const list = Array.isArray(data) ? data : (data?.markets || []);
-    for (const m of list) {
-      if (seen.has(m.id)) continue;
-      const title = (m.question || m.title || '');
-      const cat = classifyMarket(title);
-      if (cat === 'crypto') continue; // Already covered by Priority 1+2
-      seen.add(m.id);
-      m._category = cat;
-      const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
-      if (endMs <= nowMs) continue; // no maxMs filter — these can be long-horizon
-      all.push(m);
-    }
-  }));
+  // Up-or-down only: ADAN's edge is short-window crypto price action.
+  // Bulk volume scans and non-crypto categories were removed on purpose —
+  // they fed the LLM noise it has no informational advantage on.
 
   // ── Sort: By Volume and Edge ──
   // Instead of pushing Up/Down always to the top (which starves the bot with short-expiry markets),
@@ -276,7 +278,9 @@ function normalizePolymarket(raw, prices = {}) {
       clobTokenIds = typeof raw.clobTokenIds === 'string' ? JSON.parse(raw.clobTokenIds) : raw.clobTokenIds;
     }
   } catch { }
-  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds };
+  // CTF conditionId — required by Brier's ResolutionWatcher to settle paper bets
+  const conditionId = raw.conditionId || raw.condition_id || null;
+  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds, conditionId };
 }
 
 // ── Check market resolution via Polymarket API (for long-horizon non-crypto) ──
