@@ -3932,7 +3932,11 @@ setInterval(stepAdanWorld, 200);
   srv.listen(PORT, '0.0.0.0', () => {
     console.log(`[DASHBOARD] ✅ http://localhost:${PORT} ready`);
   });
-  srv.on('error', (e) => { console.error(`[DASHBOARD] ❌ Server error: ${e.message}`); });
+  srv.on('error', (e) => {
+    console.error(`[DASHBOARD] ❌ Server error: ${e.message}`);
+    // Restarts race the dying instance for the port — retry until it frees up
+    if (e.code === 'EADDRINUSE') setTimeout(() => srv.listen(PORT, '0.0.0.0'), 15000);
+  });
   return srv;
 }
 
