@@ -4458,10 +4458,9 @@ async function main() {
       // ── Wilmott v6.0: Persist EWMA state ──
       try { wilmott.saveState(); } catch { }
 
-      // ── KALSHI PREDICTION MARKET TRAINING ──
+      // ── POLYMARKET SCAN — the main flow: prices → children → brain → bet ──
       if (lastHumanState !== 'NEWS_SHOCK') {
-        // Polymarket scan is handled by the main scan flow above
-        // No perps — pure prediction market training
+        await doScan(state);
         console.log('[SCAN] ✅ Polymarket cycle complete');
       } else {
         console.log('[HUMAN] ⛔ NEWS_SHOCK detected — skipping scan cycle');
