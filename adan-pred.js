@@ -3327,6 +3327,16 @@ async function checkResolutions() {
   if (!pos.open.length) return;
   let changed = false;
 
+  // One batched request for every due market instead of one per position
+  const dueIds = [...new Set(pos.open
+    .filter(p => !p.resolved && p.closesAt && Date.now() >= new Date(p.closesAt).getTime())
+    .map(p => p.marketId))];
+  const marketById = new Map();
+  if (dueIds.length > 0) {
+    const batch = await polyFetch('/markets?' + dueIds.map(i => 'id=' + encodeURIComponent(i)).join('&'));
+    if (Array.isArray(batch)) batch.forEach(m => marketById.set(String(m.id), m));
+  }
+
   for (let i = pos.open.length - 1; i >= 0; i--) {
     const p = pos.open[i];
     if (p.resolved || !p.closesAt) continue;
@@ -3344,8 +3354,8 @@ async function checkResolutions() {
     let closed = false;
     let yesWon = false;
 
-    // Polymarket resolution fetching
-    const data = await polyFetch('/markets/' + p.marketId);
+    // Polymarket resolution from the batched fetch
+    const data = marketById.get(String(p.marketId));
     if (!data) continue;
     closed = data.closed || data.archived || data.active === false;
     if (!closed) continue;
@@ -4404,6 +4414,7 @@ async function main() {
     }
   } catch (e) { console.log('[VOICE] Init check error:', e.message); }
 
+  let _lastLoopDone = 0;
   const loop = async () => {
     try {
       state.pnl = loadPnL();
@@ -4467,8 +4478,8 @@ async function main() {
         console.log('[HUMAN] ⛔ NEWS_SHOCK detected — skipping scan cycle');
       }
 
-      // ── Watchdog heartbeat ──
-      try { fs.writeFileSync(path.join(DIR, '.heartbeat'), new Date().toISOString()); } catch {}
+      // ── Watchdog heartbeat: mark loop completion (the 30s timer does the writing) ──
+      _lastLoopDone = Date.now();
 
       state.pnl = loadPnL();
       state.positions = loadPositions();
@@ -4479,6 +4490,15 @@ async function main() {
 
   setTimeout(loop, 2000);
   setInterval(() => { state.pnl = loadPnL(); state.positions = loadPositions(); if (state.mode === 'idle') render(state); }, 30000);
+
+  // Heartbeat decoupled from cycle duration: alive = a loop completed recently.
+  let _hbStart = Date.now();
+  setInterval(() => {
+    const ref = _lastLoopDone || _hbStart;
+    if (Date.now() - ref < 10 * 60 * 1000) {
+      try { fs.writeFileSync(path.join(DIR, '.heartbeat'), new Date().toISOString()); } catch { }
+    }
+  }, 30_000);
 
   // ── Oracle Fast Loop: 60s cycle — prices + fast-path for 5min markets ──
   let fastLoopBusy = false;

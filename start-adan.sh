@@ -36,9 +36,16 @@ trap "echo 'Stopping Watchdog...'; kill $WATCHDOG_PID; exit" INT TERM
 
 # Main application loop
 while true; do
+  # Rotate log at 10MB (keep one generation)
+  if [ -f adan.log ] && [ "$(stat -f %z adan.log 2>/dev/null || stat -c %s adan.log)" -gt 10485760 ]; then
+    mv adan.log adan.log.1
+    echo "[$(date)] Log rotated (10MB)" > adan.log
+  fi
+
   echo "[$(date)] Starting node adan-pred.js..."
-  node adan-pred.js 2>&1 | tee -a adan.log
-  
+  # Terminal keeps the full TUI; the file only gets event lines (no box frames/ANSI clears)
+  node adan-pred.js 2>&1 | tee >(grep --line-buffered -avE '║|╔|╚|╠|╟|╗|╝|╣|═══|───|^\[2J|^\s*│' >> adan.log)
+
   EXIT_CODE=$?
   echo "[$(date)] ADAN exited with code $EXIT_CODE. Restarting in 10s..."
   sleep 10
