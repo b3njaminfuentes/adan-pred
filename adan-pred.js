@@ -3698,6 +3698,7 @@ async function checkResolutions() {
 
 async function doScan(state) {
   let pnl = loadPnL();
+  const config = loadConfig();
   const survival = applySurvivalMode(pnl);
   state.survivalMode = survival.mode;
   const openPos = loadPositions().open;
