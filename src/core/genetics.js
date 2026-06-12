@@ -7,14 +7,13 @@ import {
   loadConfig, saveConfig, expProgress
 } from './config.js';
 import { childLearning } from './child_learning.js';
+import { wilsonLower } from './learning_loop.js';
 
 // ── Claude naming for children ────────────────────────────────────────────────
 const CHILD_NAMES = {
   'BTC-5min': 'HERMES', 'ETH-5min': 'ATHENA', 'SOL-5min': 'HELIOS',
   'BTC-15min': 'KRONOS', 'ETH-15min': 'DAEDALUS', 'SOL-15min': 'APOLLO',
-  'XRP-5min': 'ARES', 'XRP-15min': 'PROTEUS',
-  'BTC-1hr': 'TITAN', 'ETH-1hr': 'ZEUS', 'SOL-1hr': 'POSEIDON', 'XRP-1hr': 'HADES',
-  'ALT-coins': 'PROTEUS', '1H-windows': 'TITAN', 'BTC/ETH/SOL-15min': 'ARES'
+  'BTC-1hr': 'TITAN', 'ETH-1hr': 'ZEUS', 'SOL-1hr': 'POSEIDON',
 };
 async function nameChild(spec, signal) {
   // Try predefined first — fast + free
@@ -179,8 +178,8 @@ function absorbEliteGenome(pnl) {
     // Compare against absolute winning threshold (50%) instead of lifetime lifetime average
     if (childWR < thresholdWR) continue;
 
-    // Composite score: win rate + number of trades (more trades = more confidence)
-    const score = childWR * 100 + Math.log(cp.trades + 1) * 5;
+    // Wilson lower bound: sample size already priced in
+    const score = wilsonLower(cp.wins || 0, cp.trades || 0) * 100;
     if (score > bestScore) {
       bestScore = score;
       bestChild = { ...ch, cp };
@@ -274,10 +273,11 @@ function pruneDeadChildren(pnl) {
     const realResolved = learnStats.totalResolved || 0;
     const realAccuracy = realResolved >= 5 ? Math.round((learnStats.correct || 0) / realResolved * 100) : null;
 
-    // IMMUNITY: if child has >= 5 resolved predictions and accuracy >= 50%, it survives
-    // Good children should NEVER die — they are the goal of evolution
-    if (realAccuracy !== null && realAccuracy >= 50) {
-      console.log(G + '  🛡️ IMMUNE: ' + (ch.name || ch.spec) + ' — acc:' + realAccuracy + '% (' + realResolved + ' preds) — protected from death' + X);
+    // IMMUNITY by Wilson lower bound: protection must be earned with statistical
+    // evidence, not a lucky streak. wilson>=0.40 with n>=10 ≈ "real skill plausible".
+    const realWilson = realResolved >= 10 ? wilsonLower(learnStats.correct || 0, realResolved) : null;
+    if (realWilson !== null && realWilson >= 0.40) {
+      console.log(G + '  🛡️ IMMUNE: ' + (ch.name || ch.spec) + ' — wilson:' + realWilson.toFixed(2) + ' (' + realResolved + ' preds) — protected from death' + X);
       alive.push(ch);
       continue;
     }
@@ -335,7 +335,8 @@ function pruneDeadChildren(pnl) {
     const learnData = childLearning.learning?.[specSlug] || childLearning.learning?.[ch.spec] || childLearning.learning?.[ch.spec?.toLowerCase()] || {};
     const resolved = learnData.totalResolved || 0;
     const accuracy = resolved >= 3 ? (learnData.correct || 0) / resolved : 0;
-    const score = accuracy * 100 + Math.log(resolved + 1) * 5;
+    // Wilson as fitness: sample size is already priced in — no log bonus needed
+    const score = wilsonLower(learnData.correct || 0, resolved) * 100;
     const cpPath = path.join(ch.dir || path.join(DIR, 'children', ch.id || ch.spec), 'pnl.json');
     let childData = null;
     try { childData = JSON.parse(fs.readFileSync(cpPath, 'utf8')); childData._spec = ch.spec; } catch { }
@@ -432,7 +433,8 @@ function runTournamentOfDeath(pnl) {
     try {
       const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
       const wr = cp.trades > 0 ? cp.wins / cp.trades : 0;
-      return { ...ch, wr, fund: cp.fund || 0, trades: cp.trades || 0 };
+      const wilson = wilsonLower(cp.wins || 0, cp.trades || 0);
+      return { ...ch, wr, wilson, fund: cp.fund || 0, trades: cp.trades || 0 };
     } catch { return { ...ch, wr: 0, fund: 0 }; }
   });
 
@@ -440,8 +442,8 @@ function runTournamentOfDeath(pnl) {
   const active = withStats.filter(c => c.trades >= 5);
   if (active.length < 2) return;
 
-  // Sort by WR (best first)
-  active.sort((a, b) => b.wr - a.wr);
+  // Sort by Wilson lower bound: a steady 18/30 outranks a lucky 6/8
+  active.sort((a, b) => b.wilson - a.wilson);
   const cutoff = Math.ceil(active.length / 2);
   const survivors = active.slice(0, cutoff);
   const losers = active.slice(cutoff);
@@ -463,7 +465,7 @@ function runTournamentOfDeath(pnl) {
       + `${loser.name || loser.spec} eliminated in Tournament of Death (trade ${pnl.trades}).\n`
       + `WR: ${Math.round(loser.wr * 100)}% — missed the cut. Recovered capital: $${(loser.fund || 0).toFixed(2)}.\n`;
     appendToSoul(msg);
-    console.log(R + BOLD + '\n  ✗ TOURNAMENT KILL: ' + (loser.name || loser.spec) + ' WR ' + Math.round(loser.wr * 100) + '%' + X);
+    console.log(R + BOLD + '\n  ✗ TOURNAMENT KILL: ' + (loser.name || loser.spec) + ' wilson ' + (loser.wilson * 100).toFixed(0) + '% (WR ' + Math.round(loser.wr * 100) + '%)' + X);
   }
 
   // Capital redistributed to treasury
@@ -482,7 +484,7 @@ function runTournamentOfDeath(pnl) {
   pnl.children = [...survivors, ...noTrades, ...losers];
   savePnL(pnl);
 
-  appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s => (s.name || s.spec) + ' WR:' + Math.round(s.wr * 100) + '%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
+  appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s => (s.name || s.spec) + ' wilson:' + (s.wilson * 100).toFixed(0) + '%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
   console.log(M + BOLD + '\n  ◈ TOURNAMENT DONE: ' + survivors.length + ' survivors, $' + recoveredCapital.toFixed(2) + ' recovered' + X);
 }
 
@@ -588,10 +590,11 @@ function checkUsurperPath(pnl) {
     }
 
     // Child must have > 60% WR and the parent must be underperforming (< 35 influence)
-    if (weakestParent && childWR > 0.60 && weakestInfluence < 35) {
+    const childWilson = wilsonLower(childPnl.wins || 0, childPnl.trades || 0);
+    if (weakestParent && childWilson > 0.50 && weakestInfluence < 35) {
       const oldParentId = weakestParent.id;
       const msg = `\n### USURPATION — ${new Date().toISOString()}:\n`
-        + `${child.name || child.spec} (WR:${Math.round(childWR * 100)}%) usurped ${weakestParent.name} (influence:${Math.round(weakestInfluence)}).\n`
+        + `${child.name || child.spec} (wilson:${Math.round(childWilson * 100)}% WR:${Math.round(childWR * 100)}%) usurped ${weakestParent.name} (influence:${Math.round(weakestInfluence)}).\n`
         + `The dynasty grows stronger through competition.\n`;
       appendToSoul(msg);
       console.log(C + BOLD + '\n  ⚔ USURPATION: ' + (child.name || child.spec) + ' replaced ' + weakestParent.name + X);

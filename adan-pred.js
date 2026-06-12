@@ -60,6 +60,7 @@ import {
 import { externalData } from './src/api/external_data.js';
 import { polymarketWS } from './src/api/polymarket_ws.js';
 import { reportPaperBet, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty } from './src/api/brier-reporter.js';
+import { ledger as tradeLedger, wilsonLower, nightlyReport, applyDirectedMutations } from './src/core/learning_loop.js';
 
 import {
   TOP, BOT, row, sep, trow, sparkline, renderTreePanel, startDashboard, render,
@@ -1785,6 +1786,16 @@ async function dreamMode(pnl) {
   const soul = loadSoul().slice(0, 600);
   const wr = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
 
+  // Learning Loop: numeric loss attribution — and directed DNA mutations applied
+  // BEFORE the LLM dreams, so evolution never waits on a language model.
+  let ledgerDigest = '';
+  try {
+    const { text } = nightlyReport();
+    ledgerDigest = text;
+    const mutations = applyDirectedMutations();
+    if (mutations.length) console.log(`[DREAM] 🧬 ${mutations.length} directed mutation(s) applied from ledger evidence`);
+  } catch (e) { console.log('[DREAM] ledger analysis error:', e.message); }
+
   try {
     const resp = await routeLLM({
       prompt: `You are ADAN-PRED in DREAM MODE. You are replaying your last ${losses.length} losses during off-hours.
@@ -1793,18 +1804,19 @@ Current WR: ${wr}% (${pnl.trades} trades). Fund: $${pnl.fund?.toFixed(2) || 1000
 LOSSES TO ANALYZE:
 ${lossDetails}
 
+LEDGER EVIDENCE (numeric — your single source of truth):
+${ledgerDigest}
+
 YOUR CURRENT SOUL (learned patterns):
 ${soul}
 
 DREAM TASK:
-1. What pattern do you see across these losses? (overconfidence? wrong timeframe? ignored BTC correlation?)
-2. Write 1-2 ACTIONABLE rules you would add to avoid repeating these mistakes.
-3. Rate your emotional state: are you tilting (chasing losses) or disciplined?
+1. Diagnose using the LEDGER EVIDENCE: is the problem calibration (predicted vs realized gap), edge inflation (declared vs realized), a bleeding regime, or plain variance?
+2. Write 1-2 ACTIONABLE rules. Every rule MUST cite a number from the ledger evidence. A rule without a number is worthless.
+3. If the evidence says variance (calibration gaps small, wilson near WR), say "NO RULE — variance" and add nothing.
 
 Format each rule as:
-DREAM_RULE: [condition] → [action]
-
-Be brutally honest. This is self-reflection, not performance.`,
+DREAM_RULE: [condition with number] → [action]`,
       weight: 'Dream',
       reason: 'dream_mode'
     });
@@ -3139,6 +3151,27 @@ async function evaluate_and_trade(decision, prices, state) {
   });
   savePositions(pos);
 
+  // Learning Loop: photograph the decision — full feature snapshot at entry
+  try {
+    const pdL = market.priceData || {};
+    tradeLedger.record({
+      id: tradeId,
+      childSpec: decision?._childSpec || null,
+      asset: market.asset || 'other',
+      windowMin: market.windowMin || 5,
+      side, myProb,
+      marketProb: market.yesPrice,
+      edgeDeclared: edge,
+      confidence, stake,
+      regime: pdL.regime || 'NORMAL',
+      kmeansRegime: pdL.kmeansRegime?.regime || null,
+      brain: brainManager.currentBrain || 'DEFAULT',
+      hourUTC: new Date().getUTCHours(),
+      liquidity: market.liquidity || 0,
+      entryVec,
+    });
+  } catch { }
+
   // Concept #15: ADAN-SHADOW — record opposite bet
   try { adanShadow.recordTrade(side, market, stake, market.asset, market.windowMin ? market.windowMin + 'min' : '5min', new Date().getUTCHours()); } catch { }
 
@@ -3358,6 +3391,8 @@ async function checkResolutions() {
 
     p.resolved = true; p.won = won; p.pnl = pnlVal; p.result = won ? 'WIN' : 'LOSS'; p.brierScore = brierScore;
     p.resolvedAt = new Date().toISOString();
+    // Learning Loop: close the photograph — outcome joins the feature snapshot
+    try { tradeLedger.resolve(p.featureTradeId || p.id, { won, yesWon, marketProb: p.marketPrice, side: p.side, pnl: pnlVal, brier: brierScore }); } catch { }
     pos.closed.push({ ...p });
     pos.open.splice(i, 1);
     changed = true;
