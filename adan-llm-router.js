@@ -18,7 +18,6 @@ const MODELS = {
     SNIPER: 'gemini-2.5-flash',                   // 5 RPM, 250K TPM, 20 RPD — CRITICAL ONLY
     LITE: 'gemini-2.5-flash-lite',                // 10 RPM, 250K TPM, 20 RPD — OVERFLOW
     FLASH3: 'gemini-3-flash-preview',             // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
-    FLASH_LITE: 'gemini-2.0-flash-lite',          // unlimited RPM, fallback
     // === RESERVE FLEET (15K TPM each — use sparingly) ===
     GEMMA_27B: 'gemma-3-27b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
     GEMMA_12B: 'gemma-3-12b-it',                  // 30 RPM, 15K TPM, 14.4K RPD

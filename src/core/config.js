@@ -254,7 +254,7 @@ function getSkills(L) {
     { lvl: 35, name: 'X RADAR', icon: '📰', desc: 'Twitter/X sentiment — paid from treasury', unlocked: L >= 35 },
     { lvl: 40, name: 'REAL USDC', icon: '💰', desc: 'Graduated — live USDC betting on Polymarket', unlocked: L >= 40 },
     { lvl: 50, name: 'AUTO-FUND', icon: '💳', desc: 'Uses treasury to self-pay API costs on-chain', unlocked: L >= 50 },
-    { lvl: 60, name: 'MULTI-MARKET', icon: '🌐', desc: 'Jupiter + Kalshi + Manifold — not just Polymarket', unlocked: L >= 60 },
+    { lvl: 60, name: 'MULTI-MARKET', icon: '🌐', desc: 'Expand to Manifold + other prediction markets beyond Polymarket', unlocked: L >= 60 },
     { lvl: 70, name: 'SNIPER', icon: '🏹', desc: 'Only highest-edge bet per cycle — ruthless filter', unlocked: L >= 70 },
     { lvl: 80, name: 'DYNASTY', icon: '🏦', desc: 'Full 3-gen tree — padre + 6 hijos + 12 nietos', unlocked: L >= 80 },
     { lvl: 100, name: 'SOVEREIGN', icon: '👑', desc: 'Fully autonomous — no human supervision needed', unlocked: L >= 100 },

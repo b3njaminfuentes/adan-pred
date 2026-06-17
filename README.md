@@ -4,7 +4,7 @@
 
 ## Executive Summary
 
-ADAN-PRED is a fully autonomous, self-evolving prediction markets Quantitative Research agent focused on **Polymarket crypto markets (BTC/ETH/SOL, 5–15min windows)**.
+ADAN-PRED is a fully autonomous, self-evolving prediction markets Quantitative Research agent focused exclusively on **Polymarket crypto markets (BTC/ETH/SOL) — 5min, 15min, and 1hr binary up/down windows**.
 
 In **v9.0**, the architecture gained a complete **Mother Code v2.0** layer — 14 new intelligence modules that close the gap between raw feature extraction and institutional-grade trade logic. The centerpiece is **Learning Loop v2**: an append-only `trades.jsonl` ledger that turns every trade into calibration evidence, drives directed DNA mutations, and computes Wilson-lower-bound survival scores to separate skill from luck.
 
@@ -386,6 +386,8 @@ Clarity score: crypto price markets → 0.8+. Vague events → 0.2–0.4. AVOID 
 | 4 | `gemini-3-flash-preview` | 5 | 250K | 20 | Overflow #2 |
 | 5 | `gemma-3-27b-it` | 30 | 15K | 14.4K | Reserve (heavy) |
 | 6 | `gemini-2.0-flash` | ∞ | 250K | 0* | Last resort |
+| 7 | `gemini-2.5-flash` | 5 | 250K | 20 | Sniper (Heavy/Dream only) |
+| 8 | `gemini-embedding-exp-03-07` | 100 | 30K | — | Embeddings |
 
 Routing by weight: Heavy/Dream → Sniper (2.5 Flash), Light/UltraLight → Distributed fleet, Child → Gemma 12B.
 
@@ -640,7 +642,7 @@ jupyter notebook
 | **Data Pipeline** | 85/100 | Binance + Polymarket WS + CryptoPanic + VADER + Fear&Greed + PIN + L2 + Futures + Smart Money + CEX Oracle. |
 | **Consciousness** | 75/100 | Self-reader + monologue + experiments + voice + Scenario Forecaster + journal + Human Event Layer. |
 | **Genetic Evolution** | 80/100 | MoE Dynasty + ES + Shapley pruning + Learning Loop v2 directed mutations + Wilson survival gates. |
-| **LLM Infrastructure** | 70/100 | Distributed Router v9.0 (6 models), quota management, Soul Manager deduplication. |
+| **LLM Infrastructure** | 70/100 | Distributed Router v9.0 (8 models: 6 Gemini + 2 Gemma), quota management, Soul Manager deduplication. |
 | **Execution** | 55/100 | Paper trading. CLOB WebSocket connected. Real execution pending USDC + private key integration. |
 
 **What gets us to 950+:** Live CLOB execution + Claude Haiku/Sonnet as LLM brain + XGBoost automated pipeline + >58% sustained WR.
@@ -668,5 +670,5 @@ jupyter notebook
 *Statistical: logistic regression + walk-forward + Platt calibration + Learning Loop v2.*
 *Quantitative: Paul Wilmott's "Quantitative Finance" (Wiley, 2006).*
 *ML: Marcos López de Prado's "Advances in Financial Machine Learning" (Wiley, 2018).*
-*LLM Infrastructure: Google Gemini Fleet (6 models, distributed routing).*
+*LLM Infrastructure: Google Gemini/Gemma Fleet (8 models: WORKHORSE/FAST/SNIPER/LITE/FLASH3 + GEMMA-27B/12B + embeddings).*
 *Evidence backbone: append-only trades.jsonl ledger — every decision has a paper trail.*

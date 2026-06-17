@@ -92,7 +92,7 @@ import { pinTracker } from './src/core/pin_score.js';
 import { futuresIntel } from './src/api/binance_futures.js';
 import { featureTracker } from './src/core/feature_attribution.js';
 import { oracle } from './src/core/oracle_front_run.js';
-import { childLearning, PERP_DNA_DEFAULTS } from './src/core/child_learning.js';
+import { childLearning } from './src/core/child_learning.js';
 import { regimeDetector } from './src/core/regime_classifier.js';
 import { kmeansRegime } from './src/core/regime_detector.js';
 import { featureImportance } from './src/core/feature_importance.js';
