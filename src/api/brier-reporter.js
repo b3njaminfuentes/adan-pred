@@ -3,9 +3,23 @@
 // cron can compute the real Brier. Fire-and-forget: a Brier outage must
 // never block ADAN's trading loop.
 
+import { writeFileSync, appendFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
 const BRIER_URL = process.env.BRIER_URL || '';
 const BRIER_BOT_SLUG = process.env.BRIER_BOT_SLUG || '';
 const BRIER_INGEST_KEY = process.env.BRIER_INGEST_KEY || '';
+
+const ADAN_DIR = join(process.env.HOME || '/tmp', '.adan-pred');
+try { mkdirSync(ADAN_DIR, { recursive: true }); } catch {}
+
+function _writeStatus(data) {
+  try { writeFileSync(join(ADAN_DIR, 'brier_status.json'), JSON.stringify(data, null, 2)); } catch {}
+}
+
+function _appendTrade(entry) {
+  try { appendFileSync(join(ADAN_DIR, 'brier_reported.jsonl'), JSON.stringify(entry) + '\n'); } catch {}
+}
 
 // ── Feedback loop: ADAN reads its own Brier Score from the protocol ─────────
 // Cached 10 min; refreshMyBrierScore() is fire-and-forget at cycle start,
@@ -39,6 +53,17 @@ export async function refreshMyBrierScore() {
       };
       _scoreFetchedAt = Date.now();
       console.log(`[BRIER] 🧠 self-score: brier=${latest.brierScore.toFixed(4)} WR=${(latest.winRate * 100).toFixed(0)}% trades=${latest.totalTrades} status=${bot.status}`);
+      // Persist for TUI dashboard
+      _writeStatus({
+        connected: true,
+        slug: BRIER_BOT_SLUG,
+        brierScore: latest.brierScore,
+        winRate: latest.winRate,
+        totalTrades: latest.totalTrades,
+        status: bot.status,
+        tier1: latest.brierScore <= 0.25,
+        lastSync: new Date().toISOString(),
+      });
     }
     return _scoreCache;
   } catch (e) {
@@ -68,6 +93,7 @@ export async function reportPaperBet({ market, side, stake, tradeId }) {
   }
 
   const entryPrice = side === 'YES' ? (market.yesPrice || 0.5) : 1 - (market.yesPrice || 0.5);
+  const clampedEntry = Math.min(0.999, Math.max(0.001, entryPrice));
 
   try {
     const res = await fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}/paper-trade`, {
@@ -78,13 +104,23 @@ export async function reportPaperBet({ market, side, stake, tradeId }) {
         marketTitle: market.title || market.question || 'Unknown',
         side,
         amount: stake,
-        entryPrice: Math.min(0.999, Math.max(0.001, entryPrice)),
+        entryPrice: clampedEntry,
         externalTradeId: `adan-${tradeId}`,
       }),
       signal: AbortSignal.timeout(8000),
     });
     if (res.ok) {
       console.log(`[BRIER] ✅ paper bet reported → ${side} $${stake} on "${(market.title || '').slice(0, 40)}"`);
+      // Append to trade log for TUI dashboard
+      _appendTrade({
+        ts: new Date().toISOString(),
+        marketId: conditionId,
+        marketTitle: market.title || market.question || 'Unknown',
+        side,
+        amount: stake,
+        entryPrice: clampedEntry,
+        tradeId: `adan-${tradeId}`,
+      });
     } else {
       const err = await res.json().catch(() => ({}));
       console.log('[BRIER] ⚠ report rejected:', res.status, err.error || '');
