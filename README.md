@@ -1,33 +1,19 @@
-# ADAN-PRED v8.5: The Quant ML Architecture Shift (Node.js → Python)
-## 4-Layer ML Brain × SQLite Feature Log × XGBoost Validation × Kalshi
+# ADAN-PRED v9.0: Mother Code v2.0 + Learning Loop v2
+## Evidence-Driven Evolution × Quant ML × Oracle Front-Run × Human Psychology Layer
 ---
 
 ## Executive Summary
-ADAN-PRED is a fully autonomous, self-evolving prediction markets Quantitative Research agent. In **v8.5**, the architecture has been professionalized: the Node.js engine acts as a high-speed **Data Collector & Feature Extractor** running continuously on **Kalshi**, while the actual statistical validation, Brier score calculation, and model selection (XGBoost/Logistic Regression) have been moved to a local **Python Data Science stack (SQLite + Jupyter Notebooks)**.
 
-This architectural shift allows ADAN to move away from "black box" LLM predictions and towards rigorous, reproducible Machine Learning portfolios required by top-tier Quant Hedge Funds.
+ADAN-PRED is a fully autonomous, self-evolving prediction markets Quantitative Research agent focused on **Polymarket crypto markets (BTC/ETH/SOL, 5–15min windows)**.
 
-**Current Focus:** Real-world Kalshi Paper Trading data collection (Phase 1).
+In **v9.0**, the architecture gained a complete **Mother Code v2.0** layer — 14 new intelligence modules that close the gap between raw feature extraction and institutional-grade trade logic. The centerpiece is **Learning Loop v2**: an append-only `trades.jsonl` ledger that turns every trade into calibration evidence, drives directed DNA mutations, and computes Wilson-lower-bound survival scores to separate skill from luck.
+
+**Current Focus:** Polymarket crypto binary markets (up/down). Paper trading mode building the evidence base for live deployment.
 
 ---
 
-## v8.3: Complete López de Prado AFML Suite
+## Full Changelog
 
-### What Changed (v8.0 → v8.3)
-
-| Layer | v8.0 | v8.3 |
-|-------|------|------|
-| **Risk Multipliers** | 9 | 13: + meta-labeler + CUSUM + VPIN + copula |
-| **Bet Gate** | Markovian + K-Means | + Meta-Labeling (#20E) + Resolution Oracle (#22) + CUSUM (#20D) |
-| **Bias Detection** | None | ADAN-SHADOW (#15): adversarial twin per asset/timeframe/hour |
-| **Leading Indicators** | Binance spot only | + Futures Intelligence: OI Delta, Taker Ratio, L/S Ratio, Liquidation Clusters |
-| **Trade Labeling** | Binary win/loss | Triple Barrier (#20A): TP/SL/Time labels with volatility-scaled barriers |
-| **ML Validation** | Walk-forward only | + Purged Walk-Forward CV (#20C): chronological splits, purge, embargo |
-| **Structural Breaks** | None | CUSUM Filter (#20D): two-sided accumulator with dynamic threshold |
-| **Flow Toxicity** | VPIN kill switch | + Volume VPIN (#20F): volume-bucket informed trading probability |
-| **Market Quality** | Filter + UCB | + Resolution Oracle (#22): clarity scoring, ambiguous market filter |
-
-### v8.0 → v8.5 Full Changelog
 | Version | Added |
 |---------|-------|
 | v8.0 | 14 scientific concepts, MoE Dynasty, 4-voter ensemble |
@@ -35,47 +21,245 @@ This architectural shift allows ADAN to move away from "black box" LLM predictio
 | v8.2 | Meta-Labeling (#20E), ADAN-SHADOW (#15) |
 | v8.3 | Triple Barrier (#20A), CUSUM (#20D), VPIN (#20F), Purged WF (#20C), Resolution Oracle (#22) |
 | v8.4 | Scenario Forecaster (#23), Distributed LLM Router v9.0 |
-| **v8.5** | **Python Quant ML Stack, SQLite Database Sync, Jupyter Notebook Validation, Hyperliquid Perps Purged, Kalshi-focused Data Collection, LLM Timeout Watchdog** |
-## v8.5: The Quant ML Shift (Zero-Capital Hedge Fund Architecture)
-In v8.5, we realized that forcing an LLM to act as a statistical calculator in Node.js was a bottleneck. To achieve institutional-grade performance, we separated the architecture into two distinct hemispheres:
-1. **The Nervous System (Node.js):** 24/7 autonomous data gathering, feature engineering, prompting LLMs as "Sentiment Extractors", and state management.
-2. **The Logical Brain (Python + SQLite):** A completely offline, zero-latency analytical stack using Jupyter Notebooks, Pandas, and XGBoost/Scikit-learn to map the LLM's features against true market resolutions.
-
-### Critical Changes in v8.5
-1. **Hyperliquid Perps Purged:** All perpetual futures trading logic/UI was removed. ADAN now solely focuses on Binary Prediction Markets (Kalshi) because they provide clean, deterministic `YES/NO` resolutions, which are mandatory for calculating accurate Brier Scores and running Logistic Regression.
-2. **Watchdog Resilience:** Node.js main loops are now wrapped in `Promise.race` 60s timeouts. If the LLM router hangs, the `start-adan.sh` bash watchdog kills and restarts the process automatically. Uptime is now 99.9%.
-3. **SQLite Data Sink:** JSON feature logs are now automatically parsed into `quant/adan_data.db` via `sync_to_sqlite.py`, giving us sub-10ms query times for massive datasets.
-4. **Jupyter Validation Environment:** Introduced `Research_01.ipynb` for offline Walk-Forward Cross Validation, Feature Importance extraction (XGBoost), and Equity Curve plotting.
+| v8.5 | Python Quant ML Stack, SQLite Sync, Jupyter Validation, Perps Purged, LLM Watchdog |
+| v8.6 | Venue toggles, Polymarket crypto-only refactor, doScan wiring, dashboard stability |
+| **v9.0** | **Mother Code v2.0**: Learning Loop v2, Polymerase, LMSR Engine, Particle Filter, Oracle Front-Runner, Smart Money, Human Event Layer, Market Sessions, Metabolism, Risk of Ruin, Order Book Intelligence, Quota Manager, Soul Manager. Heartbeat resilience. Batched resolutions. Log rotation. |
 
 ---
 
-## Architecture Overview (v8.5 Quant ML)
+## v9.0: Mother Code v2.0
+
+### What Changed (v8.5 → v9.0)
+
+| Layer | v8.5 | v9.0 |
+|-------|------|------|
+| **Learning** | Walk-forward CV + online SGD | + Learning Loop v2 (append-only ledger, Wilson survival, directed mutations) |
+| **Edge Calculation** | LogReg + ensemble | + LMSR Bayesian fair value + Particle Filter (200 particles) |
+| **Market Intelligence** | Binance futures | + Oracle Front-Runner (CEX→Polymarket lag) + Smart Money (whale flow) |
+| **Psychology Layer** | None | + Human Event Layer (6 states) + Market Sessions (8 global windows) |
+| **Risk Infrastructure** | Kelly × 15 multipliers | + Risk of Ruin calculator + Metabolism (fund-based scaling) + Apoptosis (controlled exit) |
+| **Pre-trade Safety** | Meta-labeling gate | + Polymerase (7-gate simulator + shadow bets) + Order Book spread filter |
+| **LLM Management** | Basic quota tracking | + Quota Manager (6-tier budgets per category) + Soul Manager (deduplication) |
+| **Reliability** | Watchdog restart | + Heartbeat decoupled from cycle + log rotation + batched resolutions |
+
+### The Evidence Backbone: Learning Loop v2
+
+The `trades.jsonl` ledger is the single source of truth. Every open and every resolution is written atomically. From it:
+
+- **Calibration curves** per child, per regime, per hour — declared vs realized edge
+- **Wilson lower bound** survival scores — statistical proof of skill vs luck before promoting a child
+- **Directed DNA mutations** — losses are not random noise, they become specific numeric corrections
+- **Edge inflation detection** — catches when children consistently overestimate their edge
+- **Shadow bet tracking** — bets blocked by Polymerase are recorded and resolved in simulation
+
+---
+
+## Architecture Overview (v9.0)
 
 ```
-                          ┌─────────────────────────────┐
-                          │   Node.js (Collector)        │
-                          │   Feature Extractor          │
-                          └─────────┬───────────────────┘
-                                    │
-                                 (JSON Log)
-                                    │
-                          ┌─────────▼───────────────────┐
-                          │   sync_to_sqlite.py (ETL)   │
-                          │   Flattens JSON to SQLite   │
-                          └─────────┬───────────────────┘
-                                    │
-                          ┌─────────▼───────────────────┐
-                          │    adan_data.db (SQLite)    │
-                          └─────────┬───────────────────┘
-                                    │
-       ┌────────────────────────────┼────────────────────────────┐
-       │                            │                            │
-┌──────▼──────┐             ┌───────▼───────┐             ┌──────▼──────┐
-│ XGBoost     │             │ Logistic Reg  │             │ EDA (Pandas)│
-│ Feature Imp │             │ Brier Score   │             │ Seaborn/Plot│
-└─────────────┘             └───────────────┘             └─────────────┘
-                            JUPYTER NOTEBOOK AREA
+                    ┌──────────────────────────────────────────┐
+                    │   Node.js Nervous System                 │
+                    │   24/7 Data Collector + Feature Eng.    │
+                    └────────────┬─────────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────────────┐
+              │                  │                           │
+    ┌─────────▼──────┐  ┌────────▼────────┐  ┌─────────────▼──────┐
+    │  Oracle Front  │  │  Binance        │  │  Polymarket CLOB   │
+    │  Runner        │  │  Candles/Futures│  │  WebSocket (L2)    │
+    └─────────┬──────┘  └────────┬────────┘  └─────────────┬──────┘
+              └──────────────────┼──────────────────────────┘
+                                 │ Raw Signals
+                    ┌────────────▼──────────────────────────┐
+                    │   MOTHER CODE v2.0 (Intelligence)     │
+                    │   Particle Filter → LMSR Engine       │
+                    │   Human Event Layer → Market Sessions │
+                    │   Smart Money → Order Book            │
+                    │   Polymerase (7-gate pre-trade check) │
+                    └────────────┬──────────────────────────┘
+                                 │ edge / stake / direction
+                    ┌────────────▼──────────────────────────┐
+                    │   4-Voter Ensemble + Kelly × 15       │
+                    │   (Stat × LLM × Hist × Online)       │
+                    └────────────┬──────────────────────────┘
+                                 │
+                    ┌────────────▼──────────────────────────┐
+                    │   trades.jsonl (append-only ledger)   │
+                    │   Learning Loop v2 → directed DNA     │
+                    └────────────┬──────────────────────────┘
+                                 │
+                    ┌────────────▼──────────────────────────┐
+                    │   SQLite (adan_data.db)               │
+                    └────────────┬──────────────────────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        │                        │                        │
+ ┌──────▼──────┐          ┌──────▼──────┐         ┌──────▼──────┐
+ │  XGBoost    │          │ Logistic Reg│         │ EDA (Pandas)│
+ │  Feature Imp│          │ Brier Score │         │ Equity Curve│
+ └─────────────┘          └─────────────┘         └─────────────┘
+                           JUPYTER NOTEBOOK AREA
 ```
+
+---
+
+## Mother Code v2.0 — Module Reference
+
+### Learning Loop v2 (`src/core/learning_loop.js`)
+
+Append-only `trades.jsonl` ledger replaces scattered JSON state files. Every decision leaves a paper trail.
+
+- `ledger.open(trade)` — records bet at placement with full feature snapshot
+- `ledger.resolve(id, won)` — closes the record with actual outcome
+- `wilsonLower(wins, n)` — 95% CI lower bound for skill measurement
+- `nightlyReport()` — calibration audit: declared vs realized edge per segment
+- `applyDirectedMutations(child)` — losses → specific DNA corrections (not random noise)
+
+### Polymerase (`src/core/polymerase.js`)
+
+Pre-execution safety simulator with 7 gates that must pass before any bet is placed:
+
+| Gate | Check | Block Condition |
+|------|-------|----------------|
+| PRICE_VALID | 0.01 ≤ price ≤ 0.99 | Invalid boundary |
+| EXIT_PATH | Liquidity exists to exit | < $50 on other side |
+| RECOVERY | Recovery potential if wrong | < 15% recovery path |
+| VAR_WILMOTT | Portfolio VaR (Ch.19) | Exceeds 20% fund |
+| LIQUIDITY | Minimum depth | < $100 total depth |
+| DEAD_ZONE | Spread + slippage trap | Net EV < 0 after costs |
+| CLOSE_WINDOW | TTC gate | < 60s remaining |
+
+All blocked bets are recorded as **shadow bets** in `shadow_bets.jsonl` — they resolve naturally and feed the learning loop with counterfactual evidence.
+
+### LMSR Engine (`src/core/lmsr_engine.js`)
+
+Understands Polymarket's Logarithmic Market Scoring Rule mechanism:
+
+- Estimates liquidity parameter `b` from observed volume
+- Inverts market price to implied momentum: `b × log(p/(1-p))`
+- Applies RSI, Fear&Greed, and volume signals as Bayesian updates
+- Outputs `posteriorFairValue` — the true edge vs market price
+
+### Particle Filter (`src/core/particle_filter.js`)
+
+Bootstrap particle filter (N=200) that estimates true market probability from noisy price signal:
+
+- Propagates particles via Gaussian process noise (σ tuned per regime)
+- Reweights by likelihood against market price observation
+- Boosts with directional technical signals
+- Systematic resampling prevents particle degeneracy
+- Returns `mean` + `variance` — high variance = avoid market
+
+### Oracle Front-Runner (`src/core/oracle_front_run.js`)
+
+Detects Binance (CEX) price moves **30–90 seconds before Polymarket reprices**:
+
+- Rolling 1-min candles: >0.3% move in 2min, >0.5% in 3min = signal
+- Confidence weighted by momentum + volume confirmation
+- Signal decays linearly after 90s (the CEX→Polymarket lag window)
+- Edge type: pure market structure arbitrage, not prediction
+
+### Smart Money Tracker (`src/core/smart_money.js`)
+
+Polls Polymarket Gamma API for whale order flow:
+
+- Detects `flowDirection` (BUY/SELL/UNKNOWN) from large order imbalances
+- Volume spike vs 7-day average (>2× = elevated smart money)
+- Liquidity skew: best_bid/best_ask imbalance as directional signal
+- Output: `smartMoneyConfidence` (0–1) fed into Kelly sizing
+
+### Order Book Intelligence (`src/core/order_book.js`)
+
+Analyzes execution economics before placing:
+
+- Spread > 5% → AVOID (cost destroys edge)
+- Spread > 3% → REDUCE_SIZE (×0.6 Kelly)
+- Depth < $500 → liquidity warning
+- Calculates effective edge loss from crossing the spread
+
+### Human Event Layer (`src/core/human_event_layer.js`)
+
+Detects 6 market psychology states using Fear&Greed, volume ratio, and UTC hour:
+
+| State | Edge Mult | Stake Mult | Trigger |
+|-------|-----------|------------|---------|
+| HERD_PANIC | ×1.4 | ×0.8 | Fear < 20, volume spike |
+| HERD_FOMO | ×0.7 | ×0.6 | Greed > 80, FOMO volume |
+| NEWS_SHOCK | ×0 | ×0 | Black swan flag active |
+| SLEEPING_HERD | ×1.1 | ×0.7 | UTC 02–08, low volume |
+| RATIONAL_MARKET | ×1.0 | ×1.0 | Default |
+| DEAD_ZONE_TRAP | ×0.5 | ×0.3 | Spread trap detected |
+
+All events logged to `human_events.jsonl`.
+
+### Market Sessions (`src/core/market_sessions.js`)
+
+8 global trading windows with Polymarket-calibrated multipliers:
+
+| Session | UTC | Edge | Stake | Notes |
+|---------|-----|------|-------|-------|
+| Sydney | 22–00 | ×0.85 | ×0.8 | Thin liquidity |
+| Tokyo | 00–03 | ×0.90 | ×0.85 | Yen crosses |
+| Shanghai | 01–04 | ×0.95 | ×0.9 | PBOC CNY fix 01:15 |
+| London | 07–10 | ×1.10 | ×1.0 | Institutional open |
+| Buenos Aires | 12–16 | ×1.00 | ×1.0 | Baseline |
+| **New York** | **13–17** | **×1.30** | **×1.1** | **PRIME — Polymarket +40% vol** |
+| Los Angeles | 17–20 | ×0.95 | ×0.9 | Post-NY fade |
+| Dead Zone | 20–22 | ×0.70 | ×0.6 | Avoid |
+
+### Metabolism (`src/core/metabolism.js`)
+
+Fund-based stake scaling — prevents over-betting relative to bankroll:
+
+| Fund Level | Kelly Multiplier |
+|-----------|-----------------|
+| < $100 | ×0 (hibernate) |
+| $100–$500 | ×0.3 |
+| $500–$1000 | ×0.6 |
+| > $1000 | exponential unleash |
+
+Also handles hibernation (fund < $500 → children sleep), and human-state overrides (NEWS_SHOCK = ×0).
+
+### Risk of Ruin (`src/core/risk_of_ruin.js`)
+
+`RoR = ((1 − edge) / (1 + edge)) ^ (bankroll / unit_stake)`
+
+| RoR | Action |
+|-----|--------|
+| > 20% | Stakes × 0.25 (emergency) |
+| > 10% | Stakes × 0.50 |
+| > 5% | Stakes × 0.75 |
+| < 5% | Normal sizing |
+
+### Apoptosis (`src/core/apoptosis.js`)
+
+Controlled programmatic shutdown (activates at LVL 10+):
+
+- Trigger: fund < 30% of initial deposit OR ≥ 10 consecutive losses
+- Closes all open positions cleanly before exit
+- Saves final state snapshot
+- Resets quota counters
+- Exits process — watchdog will NOT restart (intentional death)
+
+### Quota Manager (`src/core/quota_manager.js`)
+
+Tracks RPD (requests per day) across all 6 LLM tiers with per-category budgets:
+
+| Category | Daily Budget |
+|----------|-------------|
+| Crypto children | 10,000 |
+| Politics / Sports / Events | 1,500 each |
+| Macro | 500 |
+
+Resets at UTC midnight. `isSaverMode()` activates when < 20% quota remaining.
+
+### Soul Manager (`src/core/soul_manager.js`)
+
+Deduplicates SOUL.md rules (which can reach 470KB) down to the 6 most contextually relevant per prompt:
+
+- Normalizes percentages + patterns to detect > 80% text similarity
+- Prevents Gemma (15K TPM) prompt explosion
+- Migrates old format to new JSON rules structure
 
 ---
 
@@ -84,282 +268,126 @@ In v8.5, we realized that forcing an LLM to act as a statistical calculator in N
 ### Concept #2: Evolution Strategies (ES)
 **File:** `src/ml/evolution_strategies.js`
 
-Population of N=20 parameter vectors evolved using OpenAI-style ES:
-- Parameters: `kellyBase`, `edgeMin`, `confidenceFloor`, `regimeWeight`, `hourWeight`, `momentumDecay`
-- Fitness function: Sharpe ratio over last 200 trades
-- Update: `θ_new = θ_old + α × (1/Nσ) × Σ(ε_i × fitness_i)`
-- Gaussian noise σ=0.02, learning rate α=0.01
-- Runs per Dream cycle, persists to `~/.adan-pred/evolution_params.json`
+N=20 parameter vectors evolved with OpenAI-style ES. Fitness = Sharpe ratio over last 200 trades. `θ_new = θ_old + α × (1/Nσ) × Σ(εᵢ × fitnessᵢ)`. Gaussian noise σ=0.02, η=0.01. Runs per Dream cycle.
 
 ### Concept #3: VADER Sentiment Analysis
 **Integrated in:** `adan-brain-complete.js` (APPLE module)
 
-- Uses `vader-sentiment` npm package on CryptoPanic headlines
-- Computes average compound score across all headlines
-- Signal classification: `BLACK_SWAN` (< -0.7), `STRONG_BULLISH` (> 0.6), `BEARISH` (< -0.3), `BULLISH` (> 0.3), `NEUTRAL`
-- BLACK_SWAN overrides all technical analysis
+`vader-sentiment` on CryptoPanic headlines. Signal: `BLACK_SWAN` (< −0.7), `STRONG_BULLISH` (> 0.6), `BEARISH` (< −0.3), `BULLISH` (> 0.3), `NEUTRAL`. BLACK_SWAN overrides all technical analysis.
 
 ### Concept #7: Shapley Value Feature Importance
 **File:** `src/ml/shapley_values.js`
 
-Monte Carlo approximation of Shapley values:
-- M=100 random permutations per feature
-- Marginal contribution = accuracy_with - accuracy_without
-- Identifies TOP features (Shapley > 0.01), HARMFUL features (negative), IRRELEVANT (|Shapley| < 0.001)
-- Runs per Dream cycle on last 500 trades
-- Persists to `~/.adan-pred/shapley_values.json`
+M=100 random permutations per feature. Identifies TOP (Shapley > 0.01), HARMFUL (negative), IRRELEVANT (|Shapley| < 0.001). Runs per Dream cycle on last 500 trades.
 
 ### Concept #8A: L2 Tensor (Order Book Intelligence)
-**Integrated in:** `adan-pred.js` (fetchOrderBookWalls)
+**Integrated in:** `adan-pred.js`
 
-Three metrics from Level 2 order book depth:
-| Metric | Formula | Signal |
-|--------|---------|--------|
-| `wall_score` | Cluster density of large ask orders | Resistance strength |
-| `imbalance_ratio` | ask_volume / bid_volume | > 1 = sell pressure |
-| `depth_score` | Liquidity concentration near mid price | Stability indicator |
+`wall_score` (resistance density), `imbalance_ratio` (ask/bid pressure), `depth_score` (liquidity concentration near mid). 3 features in the 32-feature vector.
 
 ### Concept #8C: UCB Market Explorer
 **File:** `src/ml/ucb_explorer.js`
 
-Upper Confidence Bound (UCB1) for market selection:
-```
-ucb_score = avg_edge + 2.0 × √(log(N) / n_market)
-```
-- Per-market tracking of trades, wins, edge
-- Blacklisting: WR < 40% after 15 trades → 30-day ban
-- Exploration flag: < 5 trades on a market
-- Exploration cap: 3% of fund
-- Persists to `~/.adan-pred/market_explorer.json`
+`ucb_score = avg_edge + 2.0 × √(log(N)/n_market)`. Blacklist: WR < 40% after 15 trades → 30-day ban. Exploration cap: 3% of fund.
 
 ### Concept #8D: Markovian State Tracker
-**Integrated in:** `adan-pred.js` (computeMarkovianState)
+**Integrated in:** `adan-pred.js`
 
-5 state variables computed every cycle:
-| Variable | Gate Rule |
-|----------|-----------|
-| `positions_open` | ≥ 3 → block new bets |
-| `capital_deployed_pct` | > 40% → Kelly on free capital only |
-| `consecutive_losses` | ≥ 3 → cap stake at $75 |
-| `hours_since_last_win` | Context for brain prompt |
-| `current_drawdown_pct` | > 20% → Dream Mode + full stop |
+5 state variables: `positions_open` (≥3 → block), `capital_deployed_pct` (>40% → Kelly on free only), `consecutive_losses` (≥3 → cap $75), `hours_since_last_win`, `current_drawdown_pct` (>20% → Dream + stop).
 
 ### Concept #10: Mixture of Experts Dynasty (MoE)
 **File:** `src/core/moe_dynasty.js`
 
-Replaces simple majority voting for the 12 children:
-- Each child is a specialized expert with a gating weight
-- Gating network: softmax over composite score (50% WR + 30% inv-Brier + 20% edge accuracy)
-- Combined prediction: `P = Σ(gate_weight_i × expert_prediction_i)`
-- Weight update per trade: correct → `+= η × (1 - w)`, wrong → `×= (1 - η)`, η=0.05
-- Auto-specialization after 50 trades (best BTC child, best ETH child, etc.)
-- Persists to `~/.adan-pred/moe_weights.json`
+12 crypto children each with learned gate weight (softmax). Gating: 50% WR + 30% inv-Brier + 20% edge accuracy. Weight update η=0.05. Auto-specialization after 50 trades.
 
 ### Concept #12A: Log Transform
-**Integrated in:** `adan-brain-complete.js` (SNAKE) + `src/api/binance.js`
+**Integrated in:** `adan-brain-complete.js` + `src/api/binance.js`
 
-`Math.log1p()` applied to raw volumes only (not RSI, BB, funding):
-- `volumeLog = Math.log1p(rawVolume)`
-- `bidVolLog = Math.log1p(bidVolume)`
-- `askVolLog = Math.log1p(askVolume)`
-
-Prevents volume outliers from dominating feature vectors.
+`Math.log1p()` on raw volumes only. Prevents outliers from dominating feature vectors.
 
 ### Concept #12C: Bin Counting Hour Filter
-**Integrated in:** `adan-pred.js` (3 locations)
+**Integrated in:** `adan-pred.js`
 
-Replaces boolean hour filter with continuous log-odds score:
-```javascript
-pWin = (wins + 1) / (total + 2)   // Laplace smoothing
-score = log(pWin / (1 - pWin))     // Log-odds
-```
-
-| Score | Kelly Multiplier | Action |
-|-------|-----------------|--------|
-| > 0.3 | ×1.1 | Winning hour bonus |
-| < -0.3 | ×0.7 | Losing hour penalty |
-| < -1.0 | SKIP | Toxic hour, hard skip |
-| else | ×1.0 | Neutral |
-
-Also used in ensemble voter (Laplace-smoothed pWin replaces raw WR).
+`score = log(pWin/(1−pWin))` with Laplace smoothing. Score > 0.3 → ×1.1 Kelly. Score < −1.0 → hard SKIP.
 
 ### Concept #12D: K-Means Regime Detector
 **File:** `src/core/regime_detector.js`
 
-Pure Node.js K-Means clustering into 3 regimes:
-- **Features:** volatility, volume_ratio, trend_strength, bb_width, efficiency_ratio
-- **Initialization:** k-means++ for stable convergence
-- **Window:** 200-sample rolling, retrained every 50 new samples
-- **Regime Labels:** Assigned by volatility characteristics:
-  - `TRENDING` → Kelly ×1.0
-  - `RANGING` → Kelly ×0.5
-  - `EVENT` → Kelly ×0 (ALL bets VETOED)
-- Persists to `~/.adan-pred/market_regime.json`
+Pure Node.js K-Means (k=3) on 5 features: volatility, volume_ratio, trend_strength, bb_width, efficiency_ratio. `EVENT` regime → ALL bets VETOED.
 
-### Concept #14: PIN Score (Order Flow Toxicity)
+### Concept #14: PIN Score
 **File:** `src/core/pin_score.js`
 
-Probability of Informed Trading proxy from order book:
-- Bid/ask volume imbalance → PIN estimate
-- Momentum detection: 3+ consecutive same-direction imbalances
-- Signal classification:
-  - `STRONG_INFORMED` (> 0.6): follow momentum direction
-  - `MODERATE` (> 0.3): confirm with technicals
-  - `NOISE` (< 0.3): ignore
-- Persists to `~/.adan-pred/pin_scores.json`
-
-### Concept #16: Online Learning (SGD)
-**File:** `src/ml/online_learner.js`
-
-Stochastic Gradient Descent after every resolved trade:
-- Same feature vector as logistic regression
-- Exponential decay: `weight_t = 0.995^(T-t)` (recent trades matter more)
-- Adaptive learning rate: `η_t = 0.01 / (1 + 0.001 × t)`
-- L2 regularization (λ=0.01)
-- Tracks: onlineWR, onlineBrier, onlineLogLoss
-- Auto-promote: if online WR > batch WR by 2% over last 100 trades → flag
-- 4th voter in ensemble system
-
-### Concept #17: Conformal Prediction (JSON Parser)
-**Integrated in:** `adan-brain-complete.js` (parseDecision)
-
-JSON-first extraction with scale normalization:
-```javascript
-const norm01 = (v) => {
-    if (v > 1) return v / 100;  // 68 → 0.68
-    return v;
-};
-```
-- Tries JSON block first, regex fallback only if JSON fails
-- Sanity bounds: probability ∈ [0.01, 0.99], edge ∈ [-0.5, 0.5]
-- Anti-bias notice injected into prompt: "You bet YES 96% of the time. This is a SEVERE BIAS."
-- **v8.4 Edge Sign Fix:** Negative edges (LLM contradicts its own bet) → auto-SKIP instead of silent `Math.abs()`
-- **v8.4 Edge Inflation Guard:** Edges > 20% capped to 15% (data: >25% edge = 48% WR, inverted)
-
-### Concept #21: Time-to-Close (TTC) Filter
-**Integrated in:** `adan-pred.js` (getTimeDecayFactor)
-
-Graduated decay based on market closing time:
-- **5min/15min crypto markets** (detected by title): allowed with > 1 minute remaining
-  - TTC < 2min → ×0.7 decay
-  - TTC ≥ 2min → ×1.0 (full conviction)
-- **Long-term markets**: strict TTC rules
-  - < 1h → ×0.7 + min 3% edge
-  - < 4h → ×0.85 + min 2% edge
-  - > 24h → ×1.0
+Probability of Informed Trading from bid/ask imbalance. `STRONG_INFORMED` > 0.6: follow direction. `NOISE` < 0.3: ignore.
 
 ### Concept #15: ADAN-SHADOW (Adversarial Twin)
 **File:** `src/core/adan_shadow.js`
 
-Takes the OPPOSITE bet on every ADAN trade. If Shadow wins > 55%, ADAN has a systematic bias:
-- Tracks per-asset, per-timeframe, per-hour, per-direction Shadow WR
-- `getBiasReport()`: identifies worst-performing dimensions
-- `shouldFlip(asset, timeframe)`: returns true when Shadow WR > 60%
-- Prompt warning injected when bias detected
-- Persists to `~/.adan-pred/shadow_stats.json`
+Takes OPPOSITE bet on every ADAN trade. Shadow WR > 60% = ADAN has systematic bias → prompt warning + flip consideration.
 
-### Concept #20A: Triple Barrier Labeling (López de Prado)
+### Concept #16: Online Learning (SGD)
+**File:** `src/ml/online_learner.js`
+
+SGD after every resolved trade. Exponential decay: `0.995^(T−t)`. Adaptive η. L2 regularization λ=0.01. 4th voter in ensemble.
+
+### Concept #17: Conformal Prediction Parser
+**Integrated in:** `adan-brain-complete.js`
+
+JSON-first extraction, regex fallback. `norm01`: converts 68 → 0.68. Negative edge → auto-SKIP. Edge > 20% capped to 15%.
+
+### Concept #20A: Triple Barrier Labeling
 **File:** `src/ml/triple_barrier.js`
 
-Replaces binary win/loss with 3-barrier labels:
-- **Upper barrier** (TP): entry ± 2.0 × volatility
-- **Lower barrier** (SL): entry ± 2.0 × volatility
-- **Vertical barrier**: max 20 bars
-- Labels: `{1 = TP hit, 0 = timed out, -1 = SL hit}`
-- Tracks avg P&L per label type, optimal TP/SL ratio suggestion
+TP/SL = entry ± 2.0 × volatility. Vertical barrier = 20 bars. Labels: {1=TP, 0=timeout, −1=SL}.
 
-### Concept #20C: Purged Walk-Forward Cross-Validation (López de Prado)
+### Concept #20C: Purged Walk-Forward CV
 **File:** `src/ml/purged_walkforward.js`
 
-Proper ML validation preventing information leakage:
-- 5-fold chronological splits (not random)
-- 5-sample purge at train/test boundary
-- 3-sample embargo after each test fold
-- Overfitting detection: train/test accuracy ratio > 1.3x → flag
-- Auto-validates every 200 new samples with built-in logistic regression
-- Persists to `~/.adan-pred/walkforward_cv.json`
+5-fold chronological. 5-sample purge at boundary. 3-sample embargo. Overfitting flag: train/test ratio > 1.3×.
 
-### Concept #20D: CUSUM Filter (López de Prado)
+### Concept #20D: CUSUM Filter
 **File:** `src/ml/cusum_filter.js`
 
-Detects structural breaks in price series:
-- Two-sided CUSUM: tracks positive (S+) and negative (S-) cumulative sums
-- Dynamic threshold: 2 × rolling std of log returns (window 100)
-- `isInTransition()`: true if break detected in last 30 seconds
-- Stake reduction: ×0.6 during structural breaks (regime changing)
-- Persists to `~/.adan-pred/cusum_state.json`
+Two-sided accumulator. Threshold = 2 × rolling std of log returns (window 100). Break detected → stake ×0.6.
 
-### Concept #20E: Meta-Labeling (López de Prado)
+### Concept #20E: Meta-Labeling
 **File:** `src/ml/meta_labeler.js`
 
-Second logistic regression that predicts P(primary model is correct):
-- 12 meta-features: primary_confidence, ensemble_agreement, edge_magnitude, etc.
-- L2-regularized, trains every 100 samples, activates after 200
-- Decisions: `ALLOW` (prob > 0.55), `REDUCE` (0.45-0.55, stake ×0.6), `VETO` (< 0.45)
-- Tracks veto precision (correctly blocked losers) and allow precision
+Second logistic regression: P(primary model is correct). 12 meta-features. `ALLOW` > 0.55, `REDUCE` 0.45–0.55 (×0.6), `VETO` < 0.45.
 
-### Concept #20F: VPIN — Volume-Synchronized Probability of Informed Trading
+### Concept #20F: VPIN
 **File:** `src/ml/vpin.js`
 
-Estimates toxic flow using volume buckets (López de Prado):
-- Auto-calibrated bucket size from rolling volume average
-- 50 buckets for VPIN calculation
-- `VPIN = mean(|buyVol - sellVol| / bucketSize)` over last 50 buckets
-- VPIN > 0.7 = TOXIC → stake ×0.5 | VPIN > 0.5 = ELEVATED → stake ×0.8
-- Trend detection: RISING/FALLING/STABLE
-- Persists to `~/.adan-pred/vpin_state.json`
+`VPIN = mean(|buyVol−sellVol|/bucketSize)` over 50 buckets. > 0.7 = TOXIC (×0.5). > 0.5 = ELEVATED (×0.8).
 
-### Concept #22: Resolution Oracle Filter
+### Concept #21: Time-to-Close Filter
+**Integrated in:** `adan-pred.js`
+
+5/15min crypto: allowed with > 1min. < 2min → ×0.7. Long-term: < 1h → ×0.7 + 3% edge min.
+
+### Concept #22: Resolution Oracle
 **File:** `src/ml/resolution_oracle.js`
 
-Predicts whether a market will resolve cleanly:
-- Crypto price markets ("Up or Down", "above/below") → high clarity (0.8+)
-- Clear events with specific conditions → medium clarity (0.5-0.7)
-- Vague events → low clarity (0.2-0.4)
-- `TRADE` if clarity > 0.6, `AVOID` if < 0.4
-- Learns from historical resolution quality per market type
-- Persists to `~/.adan-pred/resolution_oracle.json`
+Clarity score: crypto price markets → 0.8+. Vague events → 0.2–0.4. AVOID if clarity < 0.4.
 
 ### Concept #23: Scenario Forecaster (Third Eye)
 **File:** `src/ml/scenario_forecaster.js`
 
-Before each trade, ADAN simulates 3 future scenarios using LLM:
-- **Input:** Last 30 candle closes + RSI + trend + vol ratio + BB% + MACD
-- **Output:** Bull/Bear/Neutral scenarios with probability + price target
-- **Expected Move:** Probability-weighted sum of all 3 scenarios
-- **Kelly Multiplier #15:** forecast agrees with trade → ×1.15, contradicts → ×0.75
-- **ML Features:** `forecast_direction`, `forecast_confidence`, `forecast_expected_move_pct` (features #33-35)
-- **Learning:** Records actual outcome vs prediction, tracks accuracy per asset
-- **Journal Integration:** Writes forecast accuracy to consciousness journal for self-reflection
-- Persists to `~/.adan-pred/forecast_stats.json` and `forecast_log.jsonl`
+3 future scenarios (Bull/Bear/Neutral) per trade. Forecast agrees → ×1.15. Contradicts → ×0.75. Features #33–35 in vector.
 
 ### Concept #24: Distributed LLM Router v9.0
 **File:** `adan-llm-router.js`
 
-Inverted pyramid: Flash models (250K TPM) are primary, Gemma (15K TPM) is reserve:
 | Priority | Model | RPM | TPM | RPD | Role |
 |----------|-------|-----|-----|-----|------|
-| 1 | `gemini-3.1-flash-lite-preview` | 15 | 250K | 500 | **Workhorse** (primary) |
+| 1 | `gemini-3.1-flash-lite-preview` | 15 | 250K | 500 | Workhorse (primary) |
 | 2 | `gemma-3-12b-it` | 30 | 15K | 14.4K | Reserve (light) |
 | 3 | `gemini-2.5-flash-lite` | 10 | 250K | 20 | Overflow |
 | 4 | `gemini-3-flash-preview` | 5 | 250K | 20 | Overflow #2 |
 | 5 | `gemma-3-27b-it` | 30 | 15K | 14.4K | Reserve (heavy) |
 | 6 | `gemini-2.0-flash` | ∞ | 250K | 0* | Last resort |
 
-- **Routing:** `routeLLM()` dispatches by weight: Heavy → Sniper (2.5 Flash), Dream → Sniper, Light → Distributed fleet, Child → Gemma 12B
-- **Quota Manager:** Tracks RPD for all 6 tiers, resets daily, RPM tracking per minute
-- **Embeddings:** Gemini Embedding v2 (`gemini-embedding-exp-03-07`) with legacy fallback
-
-### Futures Intelligence (Leading Indicators)
-**File:** `src/api/binance_futures.js`
-
-4 modules from Binance Futures API (free, no API key):
-| Module | Signal | Leading? |
-|--------|--------|----------|
-| OI Delta | TREND_CONFIRMED, SHORT_BUILDUP, LONG_LIQUIDATION | 1-5 min |
-| Taker Ratio | AGGRESSIVE_BUYING/SELLING + momentum | 1-3 min |
-| Long/Short Ratio | CROWDED_LONGS/SHORTS (contrarian) | 5-15 min |
-| Liquidation Clusters | Price magnets at 10x/20x/50x/100x leverage | Event-based |
+Routing by weight: Heavy/Dream → Sniper (2.5 Flash), Light/UltraLight → Distributed fleet, Child → Gemma 12B.
 
 ---
 
@@ -367,33 +395,19 @@ Inverted pyramid: Flash models (250K TPM) are primary, Gemma (15K TPM) is reserv
 
 ### 1. Statistical Brain — 32-Feature Logistic Regression
 
-Pure JavaScript L2-regularized logistic regression trained on ADAN's own 1,647+ trade history.
+Pure JavaScript L2-regularized logistic regression trained on ADAN's own trade history.
 
-**Base Features (15):**
-| Feature | Source | Signal |
-|---------|--------|--------|
-| `rsi` | Binance 1m | Oversold/overbought |
-| `rsi5m` | Binance 5m | Multi-timeframe RSI |
-| `trend1m/5m/15m/1h` | Binance | Directional momentum |
-| `bbPct` | Bollinger Bands | Position within bands |
-| `volRatio` | Volume 1m/5m | Volume spike detection |
-| `volAccel` | Volume derivative | Acceleration |
-| `vwapPct` | VWAP deviation | Institutional flow |
-| `buyPressure` | Order book | Bid/ask imbalance |
-| `obRatio` | Order book depth | Wall detection |
-| `volatility` | Realized vol | Risk level |
-| `edge` | Market mispricing | Core signal |
-| `confidence` | Meta-calibrated | Brain certainty |
+**Base Features (15):** `rsi`, `rsi5m`, `trend1m/5m/15m/1h`, `bbPct`, `volRatio`, `volAccel`, `vwapPct`, `buyPressure`, `obRatio`, `volatility`, `edge`, `confidence`
 
-**Alien Features (8):**
-`macdHist`, `fundingRate`, `priceDist`, `timeToExpiry`, `yesPrice`, `fearGreed`, `rsi1h`, `effRatio`
+**Alien Features (8):** `macdHist`, `fundingRate`, `priceDist`, `timeToExpiry`, `yesPrice`, `fearGreed`, `rsi1h`, `effRatio`
 
-**Regime Interaction Features (4):**
-`rsi_x_trending`, `rsi_x_meanrev`, `trend5m_x_trending`, `volRatio_x_volatile`
+**Regime Interaction (4):** `rsi_x_trending`, `rsi_x_meanrev`, `trend5m_x_trending`, `volRatio_x_volatile`
 
-**Binary (3) + Cyclical (2) + L2 Tensor (3):** `sellWallTrap`, `buyWallTrap`, `side_is_yes`, `hour_sin`, `hour_cos`, `wall_score`, `imbalance_ratio`, `depth_score`
+**Binary + Cyclical + L2 Tensor (5):** `sellWallTrap`, `buyWallTrap`, `side_is_yes`, `hour_sin`, `hour_cos`
 
-### 2. 4-Voter Ensemble System
+**L2 Tensor (3):** `wall_score`, `imbalance_ratio`, `depth_score`
+
+### 2. 4-Voter Ensemble
 
 ```
 P_ensemble = normalize(P_stat^w1 × P_llm^w2 × P_hist^w3 × P_online^w4)
@@ -401,24 +415,27 @@ P_ensemble = normalize(P_stat^w1 × P_llm^w2 × P_hist^w3 × P_online^w4)
 
 | Voter | Weight | Source |
 |-------|--------|--------|
-| **STAT** | 50% | Logistic regression (Platt-calibrated) |
-| **LLM** | 30% | Gemma/Gemini (Platt-calibrated) |
-| **HIST** | 15% | Bayesian base-rate (bin count + asset + soul) |
-| **ONLINE** | 5% | Online SGD learner (adaptive) |
+| STAT | 50% | Logistic regression (Platt-calibrated) |
+| LLM | 30% | Gemma/Gemini (Platt-calibrated) |
+| HIST | 15% | Bayesian base-rate (bin count + asset + soul) |
+| ONLINE | 5% | Online SGD learner (adaptive) |
 
-### 3. Kelly Sizer with 15 Multipliers
+### 3. Kelly Sizer — 15 Multipliers + Mother Code Overrides
 
 ```
-stake = baseKelly × human × session × metabolic × particle × copula ×
-        wilmott × IV × timeDecay × kmeansRegime × binCountHour ×
-        metaLabel × cusum × vpin × purgedWF × forecast
+stake = baseKelly
+      × human × session × metabolic × particle × copula
+      × wilmott × IV × timeDecay × kmeansRegime × binCountHour
+      × metaLabel × cusum × vpin × purgedWF × forecast
+      × humanEvent × marketSession × riskOfRuin × smartMoney
 ```
 
 ---
 
 ## The Dynasty: MoE Genetic Swarm
 
-### 12 Crypto Children (Expert Specialization)
+### 12 Crypto Children
+
 | Asset | 5-min | 15-min | 1-hour |
 |-------|-------|--------|--------|
 | **BTC** | HERMES | KRONOS | TITAN |
@@ -426,21 +443,14 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 | **SOL** | HELIOS | APOLLO | POSEIDON |
 | **XRP** | ARES | PROTEUS | HADES |
 
-### MoE Gating (v8.0)
-- Each child has a learned gate weight (softmax-normalized)
-- Correct prediction → weight increases (+η)
-- Wrong prediction → weight decays (×(1-η))
-- Auto-specialization: best ETH expert, best 5min expert, etc.
-- Combined prediction replaces simple majority vote
-
-### Evolution Strategies (v8.0)
-- 20 parameter vectors evolved with Gaussian noise
-- Fitness = Sharpe ratio over 200 trades
-- OpenAI-style ES update rule
-- Runs per Dream cycle
-
 ### 4 LLM Category Children
-- **politics-daily**, **sports-daily**, **macro-weekly**, **events-daily**
+**politics-daily**, **sports-daily**, **macro-weekly**, **events-daily**
+
+### Evolution (Learning Loop v2)
+- Every trade logged to `trades.jsonl` with full feature snapshot
+- Wilson lower bound determines if child has proven skill
+- Losses generate **directed mutations** (specific numeric DNA corrections)
+- Random noise ES runs per Dream cycle on top of directed mutations
 
 ---
 
@@ -448,47 +458,51 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 
 | Layer | Concept | Action |
 |-------|---------|--------|
+| Polymerase | 7-gate pre-trade simulator | Block if any gate fails |
+| Order Book | Spread economics | > 5% spread → AVOID |
+| Human Event Layer | Psychology state | NEWS_SHOCK → ×0 stake |
+| Market Session | Global session | Dead Zone → ×0.6 edge |
+| Risk of Ruin | Bankroll protection | RoR > 20% → ×0.25 stake |
+| Metabolism | Fund-based scaling | Fund < $100 → hibernate |
+| Apoptosis | Catastrophic loss | ≥10 losses → controlled exit |
 | Markovian Gate | 3 open positions | Block new bets |
 | Markovian Gate | Drawdown > 20% | Dream Mode + full stop |
 | Markovian Gate | 3+ consecutive losses | Cap stake at $75 |
 | Meta-Labeling | P(correct) < 0.45 | VETO bet |
 | Meta-Labeling | P(correct) < 0.55 | Stake ×0.6 |
 | Resolution Oracle | Clarity < 0.4 | AVOID market |
-| CUSUM Filter | Structural break active | Stake ×0.6 |
+| CUSUM Filter | Structural break | Stake ×0.6 |
 | VPIN Toxicity | VPIN > 0.7 | Stake ×0.5 |
 | VPIN Toxicity | VPIN > 0.5 | Stake ×0.8 |
 | K-Means Regime | EVENT detected | Veto ALL bets |
 | K-Means Regime | RANGING | Kelly ×0.5 |
-| Bin Count Hour | Log-odds < -1.0 | Skip toxic hour |
-| TTC Filter | < 1 min remaining | Block bet |
+| Bin Count Hour | Log-odds < −1.0 | Skip toxic hour |
+| TTC Filter | < 1min remaining | Block bet |
 | Wilmott Engine | 16 quantitative checks | Various |
 | CrashMetrics | Correlation spike | Stake ×0.3 |
 | VaR Limit | 99% confidence | Block if > 20% fund |
 | Copula Risk | Portfolio correlation | Penalty |
-| ADAN-SHADOW | Shadow WR > 60% | Consider flipping direction |
-| **v8.4** Toxic Hour | WR < 40% over 15+ trades in hour | Hard SKIP |
-| **v8.4** Edge Inflation | Declared edge > 20% net | Cap to 15% for sizing |
-| **v8.4** Edge Sign Gate | LLM gives negative edge | Auto-SKIP (brain contradicts bet) |
-| **v8.4** QUANT GATE + ES | ES-evolved confidence + edge floor | Block if below threshold |
-| **v8.4** Experiment Override | Active A/B test params | Dynamic threshold adjustment |
-| **v8.4** Scenario Forecaster | Forecast contradicts trade | Kelly ×0.75 |
+| ADAN-SHADOW | Shadow WR > 60% | Consider flip |
+| Edge Inflation Guard | Declared edge > 20% | Cap to 15% |
+| Edge Sign Gate | LLM negative edge | Auto-SKIP |
+| QUANT GATE + ES | ES-evolved floor | Block if below threshold |
+| Scenario Forecaster | Forecast contradicts | Kelly ×0.75 |
 
 ---
 
 ## Real-Time Data Layer
 
-### Perception Stack
 | Source | Data | Module |
 |--------|------|--------|
-| Binance | 1m/5m/15m/1h candles, order book L2, funding rates, VWAP | `src/api/binance.js` |
+| Binance | 1m/5m/15m/1h candles, L2 order book, funding rates, VWAP | `src/api/binance.js` |
+| Binance Futures | OI Delta, Taker Ratio, L/S Ratio, Liquidation Clusters | `src/api/binance_futures.js` |
 | Polymarket CLOB WS | Real-time L2 order book, whale orders, depth | `src/api/polymarket_ws.js` |
+| Polymarket Gamma | Smart money flow, volume anomalies, liquidity skew | `src/core/smart_money.js` |
 | CryptoPanic | News headlines + VADER sentiment | APPLE module |
-| Fear & Greed Index | Market sentiment (0-100) | `src/api/binance.js` |
-| HyperLiquid | ATLAS cross-exchange intelligence | ATLAS module |
-| PIN Score | Order flow toxicity per symbol | `src/core/pin_score.js` |
-| Binance Futures | OI Delta, Taker Ratio, L/S Ratio, Liquidation | `src/api/binance_futures.js` |
+| Fear & Greed Index | Market sentiment (0–100) | `src/api/binance.js` |
+| Oracle Front-Runner | CEX→Polymarket price lag (30–90s) | `src/core/oracle_front_run.js` |
 | VPIN | Volume-synced informed trading probability | `src/ml/vpin.js` |
-| CUSUM | Structural break detection in price series | `src/ml/cusum_filter.js` |
+| CUSUM | Structural break detection | `src/ml/cusum_filter.js` |
 
 ---
 
@@ -510,43 +524,9 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 | 7 | Transaction Costs | Min edge > 2× spread |
 | 8 | Binary Fair Value | Black-Scholes binary digital call pricing |
 | 9 | Jump Diffusion | Kurtosis > 3.5 → confidence reduction |
-| 10 | Feedback Effect | σ_eff = σ/(1 - ε×∂Δ/∂S) |
+| 10 | Feedback Effect | σ_eff = σ/(1 − ε×∂Δ/∂S) |
 | 11 | Utility Theory | CRRA, Half-Kelly = log utility |
-| 12 | Arbitrage Detection | YES + NO < 1.0 - fees → scanner |
-
-### Black-Scholes Singularity (v6.5)
-- IV Solver: Newton-Raphson for binary digital calls
-- Binary Vega: Sensitivity to volatility spikes
-- Skew Analysis: Panic skew detection
-
----
-
-## ADAN Voice System
-
-ADAN communicates with Lord through `~/.adan-pred/lord_messages.json`:
-
-| Trigger | Type | Example |
-|---------|------|---------|
-| 5+ win streak | insight | "7 wins in a row! Strategy working." |
-| 5+ loss streak | warning | "On a 6-trade losing streak. Consider pausing." |
-| Every 100 trades | milestone | "Reached 1600 trades. WR: 52.4%." |
-| Fund < $8000 | fear | "Fund dropped. Risk of ruin increasing." |
-| Every 50 trades | insight | MoE Dynasty, K-Means regime, PIN Score, Online Learner, ES, Shapley status |
-| Meta-calib < 0.80 | request | "I'm very overconfident. Need adjustment." |
-
----
-
-## Dashboard
-Real-time telemetry at `http://localhost:3141`:
-- Live prices with sparklines (BTC, ETH, SOL, XRP)
-- Dynasty Tree with MoE gate weights and specializations
-- Open positions: edge, countdown, P&L
-- Hour heatmap with bin count log-odds scores
-- Trade history with shadow/ghost bets
-- ML status: ensemble weights, walk-forward, calibration, online learner
-- Voice messages from ADAN
-- K-Means regime indicator
-- PIN Score alerts
+| 12 | Arbitrage Detection | YES + NO < 1.0 − fees → scanner |
 
 ---
 
@@ -554,10 +534,26 @@ Real-time telemetry at `http://localhost:3141`:
 
 | File | Purpose |
 |------|---------|
-| `adan-pred.js` | Main engine (~4300 lines): scanning, trading, ensemble, risk |
-| `adan-brain-complete.js` | LLM brain: 8 personas, prompt builder, JSON parser, edge sign fix |
-| `adan-llm-router.js` | **v8.4** Distributed LLM Router v9.0 (8 Gemini models) |
+| `adan-pred.js` | Main engine (~4400 lines): scanning, trading, ensemble, risk |
+| `adan-brain-complete.js` | LLM brain: 8 personas (ATLAS/APPLE/SNAKE/EVA), prompt builder, JSON parser |
+| `adan-llm-router.js` | Distributed LLM Router v9.0 (6 Gemini/Gemma models) |
+| `start-adan.sh` | Watchdog: auto-restart, heartbeat check, log rotation at 10MB |
 | `force_dream.js` | Manual dream cycle trigger |
+| **Mother Code v2.0** | |
+| `src/core/learning_loop.js` | **NEW** Append-only trades.jsonl ledger, Wilson bounds, directed mutations |
+| `src/core/polymerase.js` | **NEW** 7-gate pre-trade simulator + shadow bet recorder |
+| `src/core/lmsr_engine.js` | **NEW** LMSR Bayesian fair value calculator |
+| `src/core/particle_filter.js` | **NEW** Bootstrap particle filter (N=200) for true probability estimation |
+| `src/core/oracle_front_run.js` | **NEW** CEX→Polymarket lag detector (30–90s window) |
+| `src/core/smart_money.js` | **NEW** Whale flow tracker (Polymarket Gamma API) |
+| `src/core/order_book.js` | **NEW** Spread economics + execution cost filter |
+| `src/core/human_event_layer.js` | **NEW** 6-state market psychology detector |
+| `src/core/market_sessions.js` | **NEW** 8 global trading sessions with calibrated multipliers |
+| `src/core/metabolism.js` | **NEW** Fund-based stake scaling + hibernation |
+| `src/core/risk_of_ruin.js` | **NEW** RoR calculator + auto stake reduction |
+| `src/core/apoptosis.js` | **NEW** Controlled programmatic exit on catastrophic loss |
+| `src/core/quota_manager.js` | **NEW** 6-tier LLM quota tracking per category |
+| `src/core/soul_manager.js` | **NEW** SOUL.md deduplication (470KB → top-6 per prompt) |
 | **ML Layer** | |
 | `src/ml/logistic_regression.js` | 32-feature L2-regularized logistic regression |
 | `src/ml/walk_forward.js` | Walk-forward validation (27 folds, proper OOS) |
@@ -569,85 +565,85 @@ Real-time telemetry at `http://localhost:3141`:
 | `src/ml/evolution_strategies.js` | 20-vector ES with Sharpe fitness |
 | `src/ml/shapley_values.js` | Monte Carlo Shapley feature importance |
 | `src/ml/ucb_explorer.js` | UCB1 market selection bandit |
-| `src/ml/meta_labeler.js` | **v8.2** Meta-Labeling bet quality gate |
-| `src/ml/triple_barrier.js` | **v8.3** Triple Barrier trade labeling |
-| `src/ml/cusum_filter.js` | **v8.3** CUSUM structural break detector |
-| `src/ml/vpin.js` | **v8.3** VPIN volume toxicity tracker |
-| `src/ml/purged_walkforward.js` | **v8.3** Purged Walk-Forward CV |
-| `src/ml/resolution_oracle.js` | **v8.3** Resolution Oracle market filter |
-| `src/ml/scenario_forecaster.js` | **v8.4** Scenario Forecaster (Third Eye) |
+| `src/ml/meta_labeler.js` | Meta-Labeling bet quality gate |
+| `src/ml/triple_barrier.js` | Triple Barrier trade labeling |
+| `src/ml/cusum_filter.js` | CUSUM structural break detector |
+| `src/ml/vpin.js` | VPIN volume toxicity tracker |
+| `src/ml/purged_walkforward.js` | Purged Walk-Forward CV |
+| `src/ml/resolution_oracle.js` | Resolution Oracle market filter |
+| `src/ml/scenario_forecaster.js` | Scenario Forecaster (Third Eye) |
 | **Core** | |
 | `src/core/wilmott_quant.js` | 16 Wilmott concepts: EWMA, VaR, CrashMetrics |
 | `src/core/iv_solver.js` | Black-Scholes IV Solver & Skew Analysis |
 | `src/core/regime_classifier.js` | EWMA-based regime detection + kurtosis |
-| `src/core/regime_detector.js` | **NEW** K-Means clustering regime detector |
-| `src/core/pin_score.js` | PIN Score order flow toxicity tracker |
+| `src/core/regime_detector.js` | K-Means clustering regime detector |
+| `src/core/pin_score.js` | PIN Score order flow toxicity |
 | `src/core/moe_dynasty.js` | Mixture of Experts gating for children |
-| `src/core/adan_shadow.js` | **v8.2** ADAN-SHADOW adversarial bias detection |
-| `src/api/binance_futures.js` | **v8.1** Futures Intelligence (OI, taker, L/S, liquidation) |
+| `src/core/adan_shadow.js` | ADAN-SHADOW adversarial bias detection |
 | `src/core/genetics.js` | DNA crossover, mutation, Tournament of Death |
 | `src/core/child_learning.js` | Accuracy tracking + MoE weight updates |
-| `src/core/soul_memory_v2.js` | Pattern memory per market type |
-| `src/core/self_optimizer.js` | Nightly parameter auto-tuning |
-| `src/core/config.js` | Paths, PnL, positions management |
-| **Consciousness** | |
-| `src/core/consciousness_journal.js` | Dream cycle journal |
-| `src/core/self_reader.js` | Re-reads own journal for patterns |
+| `src/core/copula_risk.js` | Portfolio correlation risk |
 | `src/core/inner_monologue.js` | Post-trade reflections |
+| `src/core/consciousness_journal.js` | Dream cycle journal |
 | `src/core/experiment_engine.js` | Self-directed hypothesis testing |
-| `src/core/request_tracker.js` | Lord communication |
 | `src/core/adan_voice.js` | Voice output + system status reports |
+| `src/core/greeks_adapter.js` | Options Greeks adapter |
+| `src/core/feature_importance.js` | Feature importance tracking |
+| `src/core/feature_attribution.js` | Feature attribution per trade |
 | **API** | |
 | `src/api/polymarket.js` | Polymarket REST API + market classification |
 | `src/api/polymarket_ws.js` | Real-time CLOB WebSocket (L2 order book) |
 | `src/api/binance.js` | Binance candles, order book, funding, VWAP |
-| **UI** | |
-| `src/ui/dashboard.js` | HTTP dashboard + Conway Colony |
+| `src/api/binance_futures.js` | Futures Intelligence (OI, Taker, L/S, Liquidation) |
+| `src/api/brier-reporter.js` | Brier score tracking |
+| `src/api/external_data.js` | Fear & Greed + external signals |
+| `src/api/hyperliquid.js` | HyperLiquid ATLAS cross-exchange intelligence |
+| **Quant (Python)** | |
+| `quant/sync_to_sqlite.py` | ETL: JSON feature logs → SQLite |
+| `quant/Research_01.ipynb` | Walk-forward CV, XGBoost, Equity Curve |
 
 ---
 
-## Setup & Quant ML Workflow
+## Setup & Workflow
+
 ```bash
-# 1. Start the Node.js Data Collector (Background)
+# 1. Start ADAN (with watchdog)
 npm install
 echo "GEMINI_API_KEY=your_key" > .env
 chmod +x start-adan.sh
 ./start-adan.sh
 
-# 2. Setup Quantitative Python Environment
+# 2. Python Quant Environment
 cd quant
 python3 -m venv venv
 source venv/bin/activate
 pip install pandas scikit-learn xgboost jupyter matplotlib seaborn
-# (Mac Users: run `brew install libomp` for XGBoost support)
 
-# 3. Daily Workflow: Sync Data to Database
+# 3. Daily: Sync trades to database
 python sync_to_sqlite.py
 
-# 4. Open Jupyter to Analyze Edge
+# 4. Validate edge in Jupyter
 jupyter notebook
 ```
 
 ---
 
-## Intelligence Score: 835/1000
+## Intelligence Score: 880/1000
 
 | Category | Score | Details |
 |----------|-------|---------|
-| **Statistical Brain** | 135/150 | 32-feature LogReg + Online SGD + walk-forward + Shapley (smart mask) + edge sign fix. Missing: XGBoost, neural net. |
-| **Calibration** | 95/100 | Platt isotonic + meta-calibration + conformal parser + edge inflation guard + negative edge detection. |
-| **Ensemble** | 95/100 | 4-voter log-linear pooling + learned weights + veto + online learner. |
-| **Market Selection** | 85/100 | Bayesian quality filter + UCB Explorer bandit + blacklisting. |
-| **Risk Management** | 100/100 | Kelly (15 mult) + Wilmott (16) + VaR + CrashMetrics + Copula + Markovian (4 gates) + K-Means regime veto + 15 hard blockers + toxic hour + edge inflation guard. |
-| **Data Pipeline** | 80/100 | Binance + Polymarket WS + CryptoPanic + VADER + Fear&Greed + PIN Score + L2 Tensor + Futures Intelligence. Missing: on-chain. |
-| **Consciousness** | 70/100 | Self-reader + monologue + experiments + voice + Scenario Forecaster (Third Eye) + consciousness journal. Missing: meta-learning. |
-| **Genetic Evolution** | 75/100 | MoE Dynasty + Evolution Strategies + Shapley pruning. Missing: CMA-ES. |
-| **LLM Infrastructure** | 70/100 | Distributed Router v9.0 (8 models), quota management, 6-tier fallback. |
-| **Execution** | 30/100 | Paper trading only. No real CLOB execution. |
+| **Statistical Brain** | 135/150 | 32-feature LogReg + Online SGD + walk-forward + Shapley. Missing: XGBoost/neural net in real-time loop. |
+| **Calibration** | 95/100 | Platt isotonic + meta-calibration + conformal parser + edge inflation guard + Learning Loop v2 calibration curves. |
+| **Ensemble** | 95/100 | 4-voter log-linear pooling + learned weights + veto. |
+| **Market Selection** | 90/100 | Bayesian filter + UCB bandit + Oracle Front-Runner + Smart Money + LMSR fair value. |
+| **Risk Management** | 100/100 | Kelly (15+ mult) + Wilmott (16) + VaR + Apoptosis + Risk of Ruin + Metabolism + Polymerase (7 gates) + 20+ blockers. |
+| **Data Pipeline** | 85/100 | Binance + Polymarket WS + CryptoPanic + VADER + Fear&Greed + PIN + L2 + Futures + Smart Money + CEX Oracle. |
+| **Consciousness** | 75/100 | Self-reader + monologue + experiments + voice + Scenario Forecaster + journal + Human Event Layer. |
+| **Genetic Evolution** | 80/100 | MoE Dynasty + ES + Shapley pruning + Learning Loop v2 directed mutations + Wilson survival gates. |
+| **LLM Infrastructure** | 70/100 | Distributed Router v9.0 (6 models), quota management, Soul Manager deduplication. |
+| **Execution** | 55/100 | Paper trading. CLOB WebSocket connected. Real execution pending USDC + private key integration. |
 
-**What gets us to 900+:** CNN/LSTM/XGBoost (Python microservice), whale wallet tracking, real CLOB execution, and >58% WR sustained.
-
-**What gets us to 950+:** Reinforcement learning, transformer sequence model, cross-market transfer learning, and >65% WR over 5000+ trades.
+**What gets us to 950+:** Live CLOB execution + Claude Haiku/Sonnet as LLM brain + XGBoost automated pipeline + >58% sustained WR.
 
 ---
 
@@ -655,25 +651,22 @@ jupyter notebook
 
 | # | Concept | Requirement | Priority |
 |---|---------|-------------|----------|
-| 1 | CNN 1D Multivariate | Python microservice | HIGH |
-| 4 | DQN Trading Environment | Python + RL | HIGH |
-| 5 | LSTM Regime Detector | Python + TensorFlow | HIGH |
-| 6 | XGBoost Ensemble | Python + XGBoost | HIGH |
-| 9 | Whale Wallet Tracker | On-chain API | MEDIUM |
-| 18 | Infrastructure (PostgreSQL, Docker) | DevOps | LOW |
-| 19 | Arbitrage Cross-Venue | Additional APIs | LOW |
-| 11 | Ephemeral Coding | LVL 25+ gate | GATED |
-| 13 | Mempool Reader | WR>62% + fund>$30k | GATED |
-
-### Completed in v8.5 (removed from roadmap)
-- ~~#6 XGBoost Ensemble~~ → Done in v8.5 (Python Jupyter Validation)
-- ~~#20 López de Prado AFML~~ → Done in v8.3
-- ~~#24 Distributed LLM Router~~ → Done in v8.4
+| 1 | Live CLOB Execution | USDC wallet + private key | **CRITICAL** |
+| 2 | Claude as LLM Brain | Anthropic API key | HIGH |
+| 3 | Automated XGBoost Pipeline | Python microservice | HIGH |
+| 4 | CNN 1D Multivariate | Python microservice | HIGH |
+| 5 | DQN Trading Environment | Python + RL | HIGH |
+| 6 | LSTM Regime Detector | Python + TensorFlow | MEDIUM |
+| 7 | Whale Wallet Tracker | On-chain API | MEDIUM |
+| 8 | Infrastructure (PostgreSQL, Docker) | DevOps | LOW |
+| 9 | Ephemeral Coding | LVL 25+ gate | GATED |
+| 10 | Mempool Reader | WR > 62% + fund > $30k | GATED |
 
 ---
+
 *Autonomous intelligence research. Paper trading mode. Not financial advice.*
-*Statistical framework: logistic regression + walk-forward validation + Platt calibration.*
-*Quantitative framework: Paul Wilmott's "Quantitative Finance" (Wiley, 2006).*
-*ML framework: Marcos López de Prado's "Advances in Financial Machine Learning" (Wiley, 2018).*
-*Scientific concepts: VADER, K-Means, UCB1, Shapley, Evolution Strategies, PIN, MoE, Markov, CUSUM, VPIN, Triple Barrier, Meta-Labeling.*
-*LLM Infrastructure: Google Gemini Fleet (8 models, distributed routing, 250K+ TPM).*
+*Statistical: logistic regression + walk-forward + Platt calibration + Learning Loop v2.*
+*Quantitative: Paul Wilmott's "Quantitative Finance" (Wiley, 2006).*
+*ML: Marcos López de Prado's "Advances in Financial Machine Learning" (Wiley, 2018).*
+*LLM Infrastructure: Google Gemini Fleet (6 models, distributed routing).*
+*Evidence backbone: append-only trades.jsonl ledger — every decision has a paper trail.*
