@@ -406,6 +406,7 @@ const EVA = {
         if (winRate >= 0.60) { mode = 'AGGRESSIVE'; maxStake = Math.min(proposedStake, 400); }
         else if (winRate >= 0.50) { mode = 'MODERATE'; maxStake = Math.min(proposedStake, 250); }
         else if (winRate >= 0.40) { mode = 'CONSERVATIVE'; maxStake = Math.min(proposedStake, 150); }
+        else if (trades < 5) { mode = 'INCUBATION'; maxStake = Math.min(proposedStake, 50); }
         else { mode = 'SURVIVAL'; maxStake = Math.min(proposedStake, 75); reasons.push('WR below 40% — survival mode'); }
 
         // Volatility check
