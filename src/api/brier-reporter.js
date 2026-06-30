@@ -9,6 +9,7 @@ const BRIER_URL = process.env.BRIER_URL || '';
 const BRIER_BOT_SLUG = process.env.BRIER_BOT_SLUG || '';
 const BRIER_API_KEY = process.env.BRIER_API_KEY || '';
 const BRIER_API_SECRET = process.env.BRIER_API_SECRET || '';
+const BRIER_INGEST_KEY = process.env.BRIER_INGEST_KEY || '';
 
 // ── Feedback loop: ADAN reads its own Brier Score from the protocol ─────────
 // Cached 10 min; refreshMyBrierScore() is fire-and-forget at cycle start,
@@ -25,6 +26,15 @@ export async function refreshMyBrierScore() {
   if (!BRIER_URL || !BRIER_BOT_SLUG) return null;
   if (_scoreCache && Date.now() - _scoreFetchedAt < SCORE_TTL_MS) return _scoreCache;
   try {
+    // Send heartbeat first
+    if (BRIER_INGEST_KEY) {
+      await fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}/heartbeat`, {
+        method: 'POST',
+        headers: { 'x-brier-key': BRIER_INGEST_KEY },
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {}); // silent failure
+    }
+
     const res = await fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(8000),
