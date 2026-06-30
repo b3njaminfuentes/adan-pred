@@ -22,18 +22,21 @@ export function getMyBrierScore() {
   return _scoreCache;
 }
 
+// Start a persistent 4-second heartbeat loop
+if (BRIER_INGEST_KEY && BRIER_URL && BRIER_BOT_SLUG) {
+  setInterval(() => {
+    fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}/heartbeat`, {
+      method: 'POST',
+      headers: { 'x-brier-key': BRIER_INGEST_KEY },
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
+  }, 4000);
+}
+
 export async function refreshMyBrierScore() {
   if (!BRIER_URL || !BRIER_BOT_SLUG) return null;
   if (_scoreCache && Date.now() - _scoreFetchedAt < SCORE_TTL_MS) return _scoreCache;
   try {
-    // Send heartbeat first
-    if (BRIER_INGEST_KEY) {
-      await fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}/heartbeat`, {
-        method: 'POST',
-        headers: { 'x-brier-key': BRIER_INGEST_KEY },
-        signal: AbortSignal.timeout(3000),
-      }).catch(() => {}); // silent failure
-    }
 
     const res = await fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}`, {
       headers: { Accept: 'application/json' },
