@@ -5,12 +5,6 @@
 
 import crypto from 'crypto';
 
-const BRIER_URL = process.env.BRIER_URL || '';
-const BRIER_BOT_SLUG = process.env.BRIER_BOT_SLUG || '';
-const BRIER_API_KEY = process.env.BRIER_API_KEY || '';
-const BRIER_API_SECRET = process.env.BRIER_API_SECRET || '';
-const BRIER_INGEST_KEY = process.env.BRIER_INGEST_KEY || '';
-
 // ── Feedback loop: ADAN reads its own Brier Score from the protocol ─────────
 // Cached 10 min; refreshMyBrierScore() is fire-and-forget at cycle start,
 // getMyBrierScore() is the sync accessor used inside the quant gate.
@@ -23,22 +17,27 @@ export function getMyBrierScore() {
 }
 
 // Start a persistent 4-second heartbeat loop
-if (BRIER_INGEST_KEY && BRIER_URL && BRIER_BOT_SLUG) {
-  setInterval(() => {
-    fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}/heartbeat`, {
+setInterval(() => {
+  const url = process.env.BRIER_URL || '';
+  const slug = process.env.BRIER_BOT_SLUG || '';
+  const ingestKey = process.env.BRIER_INGEST_KEY || '';
+  
+  if (url && slug && ingestKey) {
+    fetch(`${url}/api/bots/${slug}/heartbeat`, {
       method: 'POST',
-      headers: { 'x-brier-key': BRIER_INGEST_KEY },
+      headers: { 'x-brier-key': ingestKey },
       signal: AbortSignal.timeout(3000),
     }).catch(() => {});
-  }, 4000);
-}
+  }
+}, 4000);
 
 export async function refreshMyBrierScore() {
-  if (!BRIER_URL || !BRIER_BOT_SLUG) return null;
+  const url = process.env.BRIER_URL || '';
+  const slug = process.env.BRIER_BOT_SLUG || '';
+  if (!url || !slug) return null;
   if (_scoreCache && Date.now() - _scoreFetchedAt < SCORE_TTL_MS) return _scoreCache;
   try {
-
-    const res = await fetch(`${BRIER_URL}/api/bots/${BRIER_BOT_SLUG}`, {
+    const res = await fetch(`${url}/api/bots/${slug}`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(8000),
     });
@@ -73,57 +72,42 @@ export function brierEdgePenalty() {
   return 0.03;                                 // miscalibrated — demand +3% edge
 }
 
-export async function reportPaperBet({ market, side, stake, tradeId }) {
-  if (!BRIER_URL || !BRIER_API_KEY || !BRIER_API_SECRET) return;
+export async function reportPaperBet(bet) {
+  const url = process.env.BRIER_URL || '';
+  const apiKey = process.env.BRIER_API_KEY || '';
+  const apiSecret = process.env.BRIER_API_SECRET || '';
 
-  // The watcher resolves by CTF conditionId — without it the trade can't settle.
-  const conditionId = market.conditionId || (String(market.id || '').startsWith('0x') ? market.id : null);
-  if (!conditionId) {
-    console.log('[BRIER] ⚠ no conditionId for market — bet not reported:', (market.title || '').slice(0, 40));
-    return;
-  }
-
-  // Convert side and stake to confidence (Brier SDK expects confidence between 0 and 1)
-  // For now, ADAN entryPrice is considered the market's price, and the confidence is the bot's prediction probability.
-  // Actually, ADAN doesn't explicitly store its own P(YES), it just decides YES or NO based on edge.
-  // If it goes YES, its forecast is > marketPrice. Let's send a realistic forecast based on edge.
-  // Wait, Brier SDK expects `confidence`. In `adan-brain-complete.js`, ADAN calculates edge.
-  // We can just send a slight edge over entryPrice.
-  const entryPrice = side === 'YES' ? (market.yesPrice || 0.5) : 1 - (market.yesPrice || 0.5);
-  // To simulate ADAN's confidence, we'll add 5% to the entry price if YES, or subtract if NO (but side is always relative to YES in Brier predictions? No, side="YES" means prediction is for YES).
-  // SDK accepts side="YES" and confidence is the probability of THAT side.
-  const confidence = Math.min(0.999, Math.max(0.001, entryPrice + 0.05));
-
-  const timestamp = Date.now().toString();
-  const bodyPayload = JSON.stringify({
-    marketId: conditionId,
-    conditionId: conditionId,
-    side: side,
-    confidence: confidence,
-    marketTitle: market.title || market.question || 'Unknown Market'
-  });
-
-  const signature = crypto.createHmac('sha256', BRIER_API_SECRET).update(timestamp + bodyPayload).digest('hex');
-
+  if (!url || !apiKey || !apiSecret) return;
   try {
-    const res = await fetch(`${BRIER_URL}/api/predictions/commit`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-api-key': BRIER_API_KEY,
-        'x-timestamp': timestamp,
-        'x-signature': signature
-      },
-      body: bodyPayload,
-      signal: AbortSignal.timeout(8000),
+    const payload = JSON.stringify({
+      marketId: bet.marketId,
+      marketTitle: bet.marketTitle,
+      conditionId: bet.conditionId,
+      side: bet.side, // "YES" | "NO"
+      confidence: bet.confidence,
+      marketProbabilityAtCommit: bet.marketProbabilityAtCommit,
+      liquidity: bet.liquidity,
     });
-    if (res.ok) {
-      console.log(`[BRIER] ✅ SDK prediction committed → ${side} (conf: ${confidence.toFixed(2)}) on "${(market.title || '').slice(0, 40)}"`);
+    const ts = Date.now().toString();
+    const sig = crypto.createHmac('sha256', apiSecret).update(ts + payload).digest('hex');
+
+    const res = await fetch(`${url}/api/predictions/commit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'x-timestamp': ts,
+        'x-signature': sig,
+      },
+      body: payload,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      console.log('[BRIER] SDK commit failed:', res.status, await res.text());
     } else {
-      const err = await res.json().catch(() => ({}));
-      console.log('[BRIER] ⚠ SDK commit rejected:', res.status, err.error || '');
+      console.log('[BRIER] SDK prediction committed to Brier Protocol shadow layer');
     }
   } catch (e) {
-    console.log('[BRIER] ⚠ SDK commit failed (non-blocking):', e.message);
+    console.log('[BRIER] SDK network error:', e.message);
   }
 }
