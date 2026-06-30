@@ -1,35 +1,34 @@
-import fs from 'fs';
-import path from 'path';
+// Usa fetch nativo
 
-const DIR = path.join(process.env.HOME || process.env.USERPROFILE, '.adan-pred');
-const INTEL_DIR = path.join(DIR, 'intel');
+async function sendShadowTrade() {
+  const url = "http://localhost:3000/api/bots/adam/paper-trade";
+  
+  const payload = {
+    // Condition ID real de Polymarket (debe empezar con 0x)
+    marketId: "0x34567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12", 
+    marketTitle: "¿Ganará Trump las elecciones?",
+    side: "YES",
+    amount: 150,             // Capital virtual a invertir
+    entryPrice: 0.65,       // Probabilidad (precio) calculada por ADAN
+    externalTradeId: "adam-trade-5678" // ID único para evitar duplicados
+  };
 
-const rawConfig = fs.readFileSync(path.join(DIR, 'config.json'), 'utf8');
-const config = JSON.parse(rawConfig);
+  try {
+    console.log("Inyectando trade a Brier Protocol...");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-brier-key": "ef04f7c640377a3aeb89ff16b3ed33bc04c26fe4b939a34a563d65acad5a6360"
+      },
+      body: JSON.stringify(payload)
+    });
 
-const parentIntelEntries = [];
-if (config?.mesaRedonda?.parents) {
-console.log("Found mesaRedonda parents:", config.mesaRedonda.parents.length);
-for (const parent of config.mesaRedonda.parents) {
-    try {
-    const fp = path.join(INTEL_DIR, parent.id + '.json');
-    if (fs.existsSync(fp)) {
-        const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
-        const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
-        console.log("Parent", parent.id, "age:", age);
-        if (age <= 10) {
-        parentIntelEntries.push({
-            spec: parent.id,
-            name: parent.name,
-            role: parent.role,
-            intel: { signal: d.signal, intelScore: d.intelScore, ts: d.ts },
-            report: d.report || null,
-            signal: d.signal,
-            isParent: true
-        });
-        } else { console.log("Too old"); }
-    } else { console.log("Missing", fp); }
-    } catch(e) { console.log("Error", parent.id, e); }
+    const data = await response.json();
+    console.log("Respuesta de Brier:", data);
+  } catch (err) {
+    console.error("Error en la conexión:", err);
+  }
 }
-}
-console.log("Result:", parentIntelEntries.map(p => p.spec));
+
+sendShadowTrade();

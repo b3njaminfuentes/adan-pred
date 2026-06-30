@@ -140,7 +140,8 @@ export class PolymarketWS {
     this.heartbeatTimer = setInterval(() => {
       if (this.ws && this.connected) {
         try {
-          this.ws.send('PING');
+          this.ws.ping(); // Standard WS control frame
+          this.ws.send('{"type":"ping"}'); // App-level ping (Polymarket CLOB)
         } catch {}
       }
     }, HEARTBEAT_INTERVAL);

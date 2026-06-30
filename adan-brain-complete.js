@@ -121,36 +121,39 @@ const ATLAS = {
         return ATLAS.fetch({ type: 'clearinghouseState', user: '0x0000000000000000000000000000000000000000' });
     },
 
-    // All open positions above threshold — whale tracker
     async getWhalePositions(coin, minSizeUSD = 500000) {
         try {
             const book = await ATLAS.getOrderBook(coin);
-            const bids = book.levels[0] || [];
-            const asks = book.levels[1] || [];
+            if (!book || !Array.isArray(book.levels)) {
+                return { midPx: 0, sellWalls: [], buyWalls: [], coin };
+            }
+            const bids = Array.isArray(book.levels[0]) ? book.levels[0] : [];
+            const asks = Array.isArray(book.levels[1]) ? book.levels[1] : [];
 
-            // Find walls: clusters of size within 0.3% of mid price
             const midPx = (parseFloat(bids[0]?.px || 0) + parseFloat(asks[0]?.px || 0)) / 2;
-            if (midPx <= 0) return { buyWalls: [], sellWalls: [], skew: 'UNKNOWN', midPx: 0, coin };
+            if (midPx <= 0 || isNaN(midPx)) return { buyWalls: [], sellWalls: [], skew: 'UNKNOWN', midPx: 0, coin };
 
             const sellWalls = asks
-                .filter(([px, sz]) => {
+                .filter(w => w && w.px && w.sz)
+                .filter(({ px, sz }) => {
                     const dist = (parseFloat(px) - midPx) / midPx;
                     const usdSize = parseFloat(sz) * parseFloat(px);
-                    return dist <= 0.005 && usdSize >= minSizeUSD; // within 0.5%, >$500k
+                    return dist <= 0.005 && usdSize >= minSizeUSD;
                 })
-                .map(([px, sz]) => ({
+                .map(({ px, sz }) => ({
                     price: parseFloat(px),
                     sizeUSD: parseFloat(sz) * parseFloat(px),
                     distancePct: ((parseFloat(px) - midPx) / midPx * 100).toFixed(3),
                 }));
 
             const buyWalls = bids
-                .filter(([px, sz]) => {
+                .filter(w => w && w.px && w.sz)
+                .filter(({ px, sz }) => {
                     const dist = (midPx - parseFloat(px)) / midPx;
                     const usdSize = parseFloat(sz) * parseFloat(px);
                     return dist <= 0.005 && usdSize >= minSizeUSD;
                 })
-                .map(([px, sz]) => ({
+                .map(({ px, sz }) => ({
                     price: parseFloat(px),
                     sizeUSD: parseFloat(sz) * parseFloat(px),
                     distancePct: ((midPx - parseFloat(px)) / midPx * 100).toFixed(3),
@@ -168,6 +171,8 @@ const ATLAS = {
     async getLiquidationLevels(coin) {
         try {
             const ctxData = await ATLAS.getAssetCtx();
+            if (!Array.isArray(ctxData)) return null;
+            
             const meta = ctxData[0]?.universe || [];
             const ctxs = ctxData[1] || [];
 
@@ -175,13 +180,14 @@ const ATLAS = {
             if (idx === -1) return null;
 
             const ctx = ctxs[idx];
+            if (!ctx) return null;
+            
             return {
                 coin,
                 fundingRate: parseFloat(ctx.funding),
                 openInterest: parseFloat(ctx.openInterest),
                 markPrice: parseFloat(ctx.markPx),
-                premium: parseFloat(ctx.premium),       // premium > 0 = longs paying
-                // High OI + high positive funding = overleveraged longs = cascade risk
+                premium: parseFloat(ctx.premium),
                 cascadeRisk: parseFloat(ctx.funding) > 0.0005 && parseFloat(ctx.openInterest) > 1000000
                     ? 'HIGH' : parseFloat(ctx.funding) < -0.0005
                         ? 'SHORT_SQUEEZE' : 'NORMAL',
