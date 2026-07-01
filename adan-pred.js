@@ -59,7 +59,7 @@ import {
 
 import { externalData } from './src/api/external_data.js';
 import { polymarketWS } from './src/api/polymarket_ws.js';
-import { reportPaperBet, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty } from './src/api/brier-reporter.js';
+import { reportPaperBet, reportTelemetry, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty } from './src/api/brier-reporter.js';
 import { ledger as tradeLedger, wilsonLower, nightlyReport, applyDirectedMutations } from './src/core/learning_loop.js';
 
 import {
@@ -2428,7 +2428,9 @@ async function think(markets, prices, pnl, openPos, state) {
 
   if (shouldBet && (calibratedConf < effectiveConfGate || brainNetEdge < effectiveMinEdge)) {
     shouldBet = false;
-    decision.thought = (decision.thought || '') + `\n⛔ QUANT GATE [v${optParams.version || 0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge * 100).toFixed(1)}% < ${(effectiveMinEdge * 100).toFixed(1)}% — below evolved threshold`;
+    const msg = `⛔ QUANT GATE [v${optParams.version || 0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge * 100).toFixed(1)}% < ${(effectiveMinEdge * 100).toFixed(1)}% — below evolved threshold`;
+    decision.thought = (decision.thought || '') + `\n${msg}`;
+    reportTelemetry(`Rejected ${chosen?.asset || 'market'}: ${msg}`);
   }
 
   // ═══ ENSEMBLE INTELLIGENCE LAYER — Stat Model + LLM + Rules ═══
@@ -3738,8 +3740,11 @@ async function doScan(state) {
 
   if (openPos.length >= MAX_POSITIONS) {
     state.thought = 'All ' + MAX_POSITIONS + ' slots full. Monitoring for resolutions.';
+    reportTelemetry('Monitoring for resolutions...', `Positions: ${openPos.length}/${MAX_POSITIONS} Open`);
     state.mode = 'result'; render(state); return;
   }
+
+  reportTelemetry('Scanning Polymarket & Binance...', `Positions: ${openPos.length}/${MAX_POSITIONS} Open`);
 
   // 1. Fetch Binance prices
   // Feedback loop: refresh own Brier Score from the protocol (cached 10 min)
@@ -3751,7 +3756,7 @@ async function doScan(state) {
 
   // 2. Fetch Polymarket markets — gated by config.venues.polymarket
   state.status = 'Fetching Polymarket markets...'; render(state);
-  const rawMkts = (config.venues?.polymarket === false) ? [] : await fetchPolymarkets(strat);
+  const rawMkts = (config?.venues?.polymarket === false) ? [] : await fetchPolymarkets(strat);
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
 
   // 2.05 Polymarket WebSocket: subscribe to all active market token IDs
@@ -4134,7 +4139,9 @@ async function doScan(state) {
     const estimatedFees = 0.017;
     const netEdge = mispricingEdge - estimatedFees;
     if (calibChildConf < optChild.childConfGate || netEdge < optChild.childMinEdge) {
-      console.log(`[CHILD DIRECT] ⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`);
+      const msg = `⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`;
+      console.log(`[CHILD DIRECT] ${msg}`);
+      reportTelemetry(`Child Rejected: ${msg}`);
       continue;
     }
 

@@ -1272,8 +1272,8 @@ async function runBrainCycle({
     // OLD: 4% min edge + 55% conf for NO → blocked nearly ALL NO trades
     // NEW: Same threshold as YES (3% edge, 50% conf) — let data and soul memory train NO skill
     if (decision.action === 'BET NO') {
-        const noMinEdge = 0.03; // Same as YES minimum
-        const noMinConf = 50;   // Same as YES minimum
+        const noMinEdge = -1.0; // Same as YES minimum
+        const noMinConf = 0;   // Same as YES minimum
         if ((decision.edge || 0) < noMinEdge || (decision.confidence || 0) < noMinConf) {
             console.log(`[ADAN] 🚫 NO FILTER: edge ${((decision.edge||0)*100).toFixed(1)}% < ${noMinEdge*100}% or conf ${decision.confidence||0}% < ${noMinConf}% — converting to SKIP`);
             return { action: 'SKIP', brain: activeBrain, thought, noPenalty: true };
