@@ -79,14 +79,15 @@ export async function reportPaperBet(bet) {
 
   if (!url || !apiKey || !apiSecret) return;
   try {
+    const market = bet.market || {};
     const payload = JSON.stringify({
-      marketId: bet.marketId,
-      marketTitle: bet.marketTitle,
-      conditionId: bet.conditionId,
+      marketId: bet.marketId || market.condition_id || market.id,
+      marketTitle: bet.marketTitle || market.question,
+      conditionId: bet.conditionId || market.condition_id,
       side: bet.side, // "YES" | "NO"
-      confidence: bet.confidence,
-      marketProbabilityAtCommit: bet.marketProbabilityAtCommit,
-      liquidity: bet.liquidity,
+      confidence: bet.confidence || 0.85, // Default confidence if not provided by ADAN
+      marketProbabilityAtCommit: bet.marketProbabilityAtCommit || (market.tokens ? market.tokens[0].price : 0.5),
+      liquidity: bet.liquidity || market.liquidity || 0,
     });
     const ts = Date.now().toString();
     const sig = crypto.createHmac('sha256', apiSecret).update(ts + payload).digest('hex');
