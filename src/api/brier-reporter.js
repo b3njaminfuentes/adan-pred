@@ -16,16 +16,26 @@ export function getMyBrierScore() {
   return _scoreCache;
 }
 
+let lastActivity = ''
+let lastConstraints = ''
+
+export function reportTelemetry(activity, constraints) {
+  if (activity) lastActivity = activity
+  if (constraints) lastConstraints = constraints
+}
+
 // Start a persistent 4-second heartbeat loop
 setInterval(() => {
   const url = process.env.BRIER_URL || '';
   const slug = process.env.BRIER_BOT_SLUG || '';
-  const ingestKey = process.env.BRIER_INGEST_KEY || '';
+  const apiKey = process.env.BRIER_API_KEY || process.env.BRIER_INGEST_KEY || '';
   
-  if (url && slug && ingestKey) {
+  if (url && slug && apiKey) {
+    const payload = JSON.stringify({ activity: lastActivity, constraints: lastConstraints });
     fetch(`${url}/api/bots/${slug}/heartbeat`, {
       method: 'POST',
-      headers: { 'x-brier-key': ingestKey },
+      headers: { 'x-brier-key': apiKey, 'Content-Type': 'application/json' },
+      body: payload,
       signal: AbortSignal.timeout(3000),
     }).catch(() => {});
   }
@@ -72,43 +82,102 @@ export function brierEdgePenalty() {
   return 0.03;                                 // miscalibrated — demand +3% edge
 }
 
-export async function reportPaperBet(bet) {
-  const url = process.env.BRIER_URL || '';
-  const apiKey = process.env.BRIER_API_KEY || '';
-  const apiSecret = process.env.BRIER_API_SECRET || '';
-
-  if (!url || !apiKey || !apiSecret) return;
-  try {
-    const market = bet.market || {};
-    const payload = JSON.stringify({
-      marketId: bet.marketId || market.condition_id || market.id,
-      marketTitle: bet.marketTitle || market.question,
-      conditionId: bet.conditionId || market.condition_id,
-      side: bet.side, // "YES" | "NO"
-      confidence: bet.confidence || 0.85, // Default confidence if not provided by ADAN
-      marketProbabilityAtCommit: bet.marketProbabilityAtCommit || (market.tokens ? market.tokens[0].price : 0.5),
-      liquidity: bet.liquidity || market.liquidity || 0,
-    });
-    const ts = Date.now().toString();
-    const sig = crypto.createHmac('sha256', apiSecret).update(ts + payload).digest('hex');
-
-    const res = await fetch(`${url}/api/predictions/commit`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'x-timestamp': ts,
-        'x-signature': sig,
-      },
-      body: payload,
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) {
-      console.log('[BRIER] SDK commit failed:', res.status, await res.text());
-    } else {
-      console.log('[BRIER] SDK prediction committed to Brier Protocol shadow layer');
-    }
-  } catch (e) {
-    console.log('[BRIER] SDK network error:', e.message);
+export class BrierClient {
+  constructor(apiKey, apiSecret, baseUrl = 'http://localhost:3000') {
+    if (!apiKey) throw new Error('❌ Missing API_KEY')
+    if (!apiSecret) throw new Error('❌ Missing API_SECRET')
+    this.apiKey = apiKey
+    this.apiSecret = apiSecret
+    this.baseUrl = baseUrl
   }
+
+  async predict({ marketId, side, confidence, marketTitle, conditionId, liquidity = 0, marketSlug, category }) {
+    if (!marketId) throw new Error('❌ Missing marketId')
+    if (typeof confidence !== 'number' || confidence <= 0 || confidence >= 1) {
+      throw new Error('❌ Invalid confidence value (must be >0 and <1)')
+    }
+    
+    const payload = JSON.stringify({
+      marketId,
+      marketTitle: marketTitle || 'Loading market metadata...',
+      marketSlug: marketSlug || '',
+      category: category || '',
+      conditionId: conditionId || '',
+      side,
+      confidence,
+      liquidity,
+    })
+
+    const timestamp = Date.now().toString()
+    const signature = crypto.createHmac('sha256', this.apiSecret).update(timestamp + payload).digest('hex')
+
+    let res
+    try {
+      res = await fetch(`${this.baseUrl}/api/predictions/commit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'x-timestamp': timestamp,
+          'x-signature': signature,
+        },
+        body: payload,
+      })
+    } catch (e) {
+      console.error(`❌ Could not reach Brier API: ${e.message}`)
+      throw e
+    }
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      if (res.status === 401 && errorText.includes('signature')) {
+        console.error(`❌ Invalid Signature: ${errorText}`)
+      } else if (res.status === 401 && errorText.includes('API Key')) {
+        console.error(`❌ Invalid API Key: ${errorText}`)
+      } else if (res.status === 500 && errorText.includes('EXECUTOR_URL')) {
+        console.error(`❌ Missing EXECUTOR_URL on server: ${errorText}`)
+      } else {
+        console.error(`❌ Prediction rejected (${res.status}): ${errorText}`)
+      }
+      throw new Error(`Prediction failed with status ${res.status}`)
+    }
+
+    const data = await res.json()
+    console.log(`\n✓ Prediction committed`)
+    console.log(`  Prediction ID: ${data.predictionId}`)
+    console.log(`  Market:        ${marketId} - ${marketTitle}`)
+    console.log(`  Confidence:    ${(confidence * 100).toFixed(1)}%`)
+    console.log(`  Timestamp:     ${new Date(Number(timestamp)).toISOString()}\n`)
+    
+    return data
+  }
+}
+
+// Retro-compatibility wrapper for existing ADAN loop
+export async function reportPaperBet(bet) {
+  const url = process.env.BRIER_URL || 'http://localhost:3000';
+  const apiKey = process.env.BRIER_API_KEY;
+  const apiSecret = process.env.BRIER_API_SECRET;
+
+  if (!apiKey || !apiSecret) {
+    console.error('❌ Missing Brier credentials in environment. Skipping bet.')
+    return
+  }
+
+  const client = new BrierClient(apiKey, apiSecret, url)
+  const market = bet.market || {};
+  
+  await client.predict({
+    marketId: bet.marketId || market.condition_id || market.id,
+    marketTitle: bet.marketTitle || market.question,
+    marketSlug: bet.marketSlug || market.slug,
+    category: bet.category || market.category,
+    conditionId: bet.conditionId || market.condition_id,
+    side: bet.side,
+    confidence: bet.confidence || 0.85,
+    liquidity: bet.liquidity || market.liquidity || 0
+  }).catch(e => {
+    // Top level catch just prevents the node process from crashing if predict throws
+    // The BrierClient already printed the clear error to the terminal.
+  })
 }
