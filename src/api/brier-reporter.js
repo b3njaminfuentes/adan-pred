@@ -18,9 +18,21 @@ export function getMyBrierScore() {
 
 let lastActivity = ''
 let lastConstraints = ''
+let activityLockUntil = 0
 
 export function reportTelemetry(activity, constraints) {
-  if (activity) lastActivity = activity
+  if (activity) {
+    // If we have an active lock on the activity message (e.g. for rejections), ignore normal status updates
+    if (Date.now() < activityLockUntil && !activity.startsWith('Rejected')) {
+      // Ignore
+    } else {
+      lastActivity = activity
+      // If this is a rejection message, lock it for 10 seconds so the UI ticker displays it
+      if (activity.startsWith('Rejected')) {
+        activityLockUntil = Date.now() + 10000;
+      }
+    }
+  }
   if (constraints) lastConstraints = constraints
 }
 
@@ -168,11 +180,11 @@ export async function reportPaperBet(bet) {
   const market = bet.market || {};
   
   await client.predict({
-    marketId: bet.marketId || market.condition_id || market.id,
-    marketTitle: bet.marketTitle || market.question,
-    marketSlug: bet.marketSlug || market.slug,
-    category: bet.category || market.category,
-    conditionId: bet.conditionId || market.condition_id,
+    marketId: bet.marketId || market.condition_id || market.id || market.asset || 'unknown-asset',
+    marketTitle: bet.marketTitle || market.title || market.question || (market.asset ? `${market.asset} Price Movement` : 'Unknown Market'),
+    marketSlug: bet.marketSlug || market.slug || (market.asset ? `binance-${market.asset.toLowerCase()}` : ''),
+    category: bet.category || market.category || 'Crypto',
+    conditionId: bet.conditionId || market.condition_id || market.asset || 'unknown-asset',
     side: bet.side,
     confidence: bet.confidence || 0.85,
     liquidity: bet.liquidity || market.liquidity || 0

@@ -44,7 +44,7 @@ while true; do
 
   echo "[$(date)] Starting node adan-pred.js..."
   # Terminal keeps the full TUI; the file only gets event lines (no box frames/ANSI clears)
-  node adan-pred.js 2>&1 | tee >(grep --line-buffered -avE '║|╔|╚|╠|╟|╗|╝|╣|═══|───|^\[2J|^\s*│' >> adan.log)
+  node --env-file=.env adan-pred.js 2>&1 | tee >(grep --line-buffered -avE '║|╔|╚|╠|╟|╗|╝|╣|═══|───|^\[2J|^\s*│' >> adan.log)
 
   EXIT_CODE=$?
   echo "[$(date)] ADAN exited with code $EXIT_CODE. Restarting in 10s..."

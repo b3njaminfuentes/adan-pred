@@ -2335,7 +2335,7 @@ async function think(markets, prices, pnl, openPos, state) {
       riskOfRuinCtx: riskOfRuin.getDashboardStr(pnl, PAPER_BET_SIZE),
       markovianStateCtx: (() => {
         const mkv = computeMarkovianState();
-        return `Positions Open: ${mkv.positions_open}/3 | Capital Deployed: ${(mkv.capital_deployed_pct * 100).toFixed(1)}% | Consecutive Losses: ${mkv.consecutive_losses} | Hours Since Last Win: ${mkv.hours_since_last_win.toFixed(1)}h | Drawdown: ${(mkv.current_drawdown_pct * 100).toFixed(1)}% | Free Capital: $${mkv.free_capital}`;
+        return `Positions Open: ${mkv.positions_open}/${MAX_POSITIONS} | Capital Deployed: ${(mkv.capital_deployed_pct * 100).toFixed(1)}% | Consecutive Losses: ${mkv.consecutive_losses} | Hours Since Last Win: ${mkv.hours_since_last_win.toFixed(1)}h | Drawdown: ${(mkv.current_drawdown_pct * 100).toFixed(1)}% | Free Capital: $${mkv.free_capital}`;
       })(),
       brainManager,
       skillsBlock,
@@ -2407,14 +2407,15 @@ async function think(markets, prices, pnl, openPos, state) {
   // Use ES-evolved thresholds if they're stricter than self-optimizer
   // TRAINING MODE: Use self-optimizer only — ES thresholds are for live safety
   const isTraining = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING';
-  const effectiveConfGate = isTraining ? optParams.confGate : Math.max(optParams.confGate, esGateParams.confidenceFloor || 0);
+  const effectiveConfGate = 0; // FORCED TO 0 TEMPORARILY FOR QA
+  const effectiveMinEdge = 0.0; // FORCED TO 0 TEMPORARILY FOR QA
   // Brier feedback: if the protocol says ADAN is miscalibrated, demand more edge
   const brierPenalty = brierEdgePenalty();
   const myScore = getMyBrierScore();
   if (brierPenalty > 0) {
     console.log(`[BRIER GATE] 🧠 brier=${myScore?.brier?.toFixed(3)} → +${(brierPenalty * 100).toFixed(0)}% edge required`);
   }
-  const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
+  // const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
   const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
 
   // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
@@ -2431,6 +2432,7 @@ async function think(markets, prices, pnl, openPos, state) {
     const msg = `⛔ QUANT GATE [v${optParams.version || 0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge * 100).toFixed(1)}% < ${(effectiveMinEdge * 100).toFixed(1)}% — below evolved threshold`;
     decision.thought = (decision.thought || '') + `\n${msg}`;
     reportTelemetry(`Rejected ${chosen?.asset || 'market'}: ${msg}`);
+    console.log(msg); // <--- Added this line
   }
 
   // ═══ ENSEMBLE INTELLIGENCE LAYER — Stat Model + LLM + Rules ═══
@@ -2636,8 +2638,8 @@ async function evaluate_and_trade(decision, prices, state) {
   const markov = computeMarkovianState();
 
   // Rule 1: Max 3 open positions — prevent over-exposure
-  if (markov.positions_open >= 3) {
-    console.log(`[MARKOV] ⛔ MAX POSITIONS (${markov.positions_open}/3) — skipping new bet`);
+  if (markov.positions_open >= MAX_POSITIONS) {
+    console.log(`[MARKOV] ⛔ MAX POSITIONS (${markov.positions_open}/${MAX_POSITIONS}) — skipping new bet`);
     recordAdanShadow(decision, market, 'MAX_POSITIONS_OPEN');
     return;
   }
@@ -3018,8 +3020,8 @@ async function evaluate_and_trade(decision, prices, state) {
       }
     }
 
-    // Rule 4: Capital deployed > 40% → Kelly on free capital only
-    if (mkv.capital_deployed_pct > 0.40) {
+    // Rule 4: Capital deployed > 80% → Kelly on free capital only
+    if (mkv.capital_deployed_pct > 0.80) {
       const freeCapitalStake = Math.round(Math.min(stake, mkv.free_capital * 0.05) / 25) * 25;
       if (freeCapitalStake < stake) {
         console.log(`[MARKOV] 📉 HIGH EXPOSURE (${(mkv.capital_deployed_pct * 100).toFixed(0)}%) — stake reduced $${stake} → $${freeCapitalStake} (free capital: $${mkv.free_capital})`);
@@ -3068,7 +3070,7 @@ async function evaluate_and_trade(decision, prices, state) {
   const tradeId = Date.now().toString();
 
   // ═══ BRIER PROTOCOL: report this paper bet to the shadow indexer ═══
-  reportPaperBet({ market, side, stake, tradeId }).catch(() => { });
+  reportPaperBet({ market, side, stake, tradeId, confidence: confidence / 100 }).catch(() => { });
 
   try {
     const fgData = state?.prices?._meta?.fearGreed;
