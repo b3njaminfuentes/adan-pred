@@ -2407,15 +2407,14 @@ async function think(markets, prices, pnl, openPos, state) {
   // Use ES-evolved thresholds if they're stricter than self-optimizer
   // TRAINING MODE: Use self-optimizer only — ES thresholds are for live safety
   const isTraining = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING';
-  const effectiveConfGate = 0; // FORCED TO 0 TEMPORARILY FOR QA
-  const effectiveMinEdge = 0.0; // FORCED TO 0 TEMPORARILY FOR QA
+  const effectiveConfGate = isTraining ? optParams.confGate : Math.max(optParams.confGate, esGateParams.confidenceFloor || 0);
   // Brier feedback: if the protocol says ADAN is miscalibrated, demand more edge
   const brierPenalty = brierEdgePenalty();
   const myScore = getMyBrierScore();
   if (brierPenalty > 0) {
     console.log(`[BRIER GATE] 🧠 brier=${myScore?.brier?.toFixed(3)} → +${(brierPenalty * 100).toFixed(0)}% edge required`);
   }
-  // const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
+  const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
   const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
 
   // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
