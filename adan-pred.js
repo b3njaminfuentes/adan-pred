@@ -761,6 +761,19 @@ function recordAdanShadow(decision, market, reason) {
 
     console.log(`[SHADOW BRAIN] 👻 Recording shadow bet for training: ${side} (prob: ${myProb.toFixed(2)}) | Reason: ${reason}`);
 
+    // Capital vetoes stop STAKES, not FORECASTS. A prediction risks nothing,
+    // and Brier v1 reputation is built on forecasts alone — freezing commits
+    // because the paper fund is in drawdown froze the snowball for no reason.
+    // Signal vetoes (insufficient EV, etc.) stay local: no signal, no commit.
+    // decision.action can be a bare "BET" — normalize to YES/NO or don't commit.
+    const CAPITAL_VETOES = ['HIGH_DRAWDOWN_VETO', 'MAX_POSITIONS_OPEN', 'PROBATION_SINGLE_POSITION'];
+    const rawSide = String(decision.side || decision.action || '').toUpperCase().replace(/^BET\s*/, '').trim();
+    const commitSide = ['NO', 'DOWN', 'SHORT'].includes(rawSide) ? 'NO'
+      : ['YES', 'UP', 'LONG'].includes(rawSide) ? 'YES' : null;
+    if (CAPITAL_VETOES.includes(reason) && commitSide && myProb > 0 && myProb < 1) {
+      reportPaperBet({ market, side: commitSide, probability: myProb, marketYesPrice: market.yesPrice }).catch(() => {});
+    }
+
     // Feed into childLearning as a specialized "ADAN-MAIN" agent shadow
     childLearning.recordPrediction('ADAN-MAIN', {
       direction: side,
@@ -2643,12 +2656,40 @@ async function evaluate_and_trade(decision, prices, state) {
     return;
   }
 
-  // Rule 2: Drawdown > 20% → full stop + trigger Dream Mode
-  if (markov.current_drawdown_pct > 0.20) {
-    console.log(`[MARKOV] 🔴 DRAWDOWN STOP: ${(markov.current_drawdown_pct * 100).toFixed(1)}% > 20% threshold — entering Dream Mode`);
+  // Rule 2: Drawdown > 20% → Dream Mode ONCE per episode, then PROBATION — a
+  // middle term, not a coma. The old full stop measured drawdown against a
+  // frozen peak: with betting vetoed and no open positions left, the fund
+  // could never move again, so the veto never lifted (permanent self-coma)
+  // and Brier commits froze with it.
+  //   Probation: $25 flat stake, 8% edge floor, ONE open position — until the
+  //   drawdown heals below 15%. Survive small, learn, earn the way back.
+  const DD_STOP = 0.20, DD_RECOVER = 0.15;
+  if (markov.current_drawdown_pct > DD_STOP && !pnlNow.ddProbation) {
+    console.log(`[MARKOV] 🔴 DRAWDOWN STOP: ${(markov.current_drawdown_pct * 100).toFixed(1)}% > ${(DD_STOP * 100)}% — Dream Mode once, then probation`);
     recordAdanShadow(decision, market, 'HIGH_DRAWDOWN_VETO');
     try { await dreamMode(pnlNow); } catch (e) { console.log('[MARKOV] Dream mode error:', e.message); }
+    pnlNow.ddProbation = true;
+    savePnL(pnlNow);
     return;
+  }
+  if (pnlNow.ddProbation && markov.current_drawdown_pct <= DD_RECOVER) {
+    console.log(`[MARKOV] 🟢 Drawdown healed to ${(markov.current_drawdown_pct * 100).toFixed(1)}% ≤ ${(DD_RECOVER * 100)}% — probation lifted, normal sizing restored`);
+    pnlNow.ddProbation = false;
+    savePnL(pnlNow);
+  }
+  const ddProbation = !!pnlNow.ddProbation;
+  if (ddProbation && markov.positions_open >= 1) {
+    console.log('[MARKOV] 🟡 PROBATION: one position at a time while healing');
+    recordAdanShadow(decision, market, 'PROBATION_SINGLE_POSITION');
+    return;
+  }
+  if (ddProbation && Math.abs(edge || 0) < 0.08) {
+    console.log(`[MARKOV] 🟡 PROBATION: edge ${(Math.abs(edge || 0) * 100).toFixed(1)}% < 8% floor while healing — skipped`);
+    recordAdanShadow(decision, market, 'PROBATION_EDGE_FLOOR');
+    return;
+  }
+  if (ddProbation) {
+    console.log(`[MARKOV] 🟡 PROBATION active (dd ${(markov.current_drawdown_pct * 100).toFixed(1)}%): $25 stake, 8% edge floor, 1 position`);
   }
 
   // Rule 3: 3+ consecutive losses → cap stake at $75 (applied later in stake calc)
@@ -2924,7 +2965,8 @@ async function evaluate_and_trade(decision, prices, state) {
 
   // ═══ COMBINED STAKE (Kelly × Mother Code multipliers with floor) ═══
   // We only reach here if EV > 0 (as mathematically required by Kelly formula)
-  const baseStake = kellyStake(pnlNow, side, myProb, market.yesPrice, edge, confidence);
+  // Probation (healing a >20% drawdown): flat minimum ticket, no Kelly.
+  const baseStake = ddProbation ? 25 : kellyStake(pnlNow, side, myProb, market.yesPrice, edge, confidence);
   const humanMult = (lastHumanState === 'NEWS_SHOCK') ? 0 : 1.0;
   const sessionMult = sessionAdj.stakeMultiplier;
   const metabolicMult = metabolism.getStakeMultiplier(pnlNow.fund || 0, lastHumanState);
@@ -3068,8 +3110,10 @@ async function evaluate_and_trade(decision, prices, state) {
   // ═══ FEATURE ATTRIBUTION: Record entry features ═══
   const tradeId = Date.now().toString();
 
-  // ═══ BRIER PROTOCOL: report this paper bet to the shadow indexer ═══
-  reportPaperBet({ market, side, stake, tradeId, confidence: confidence / 100 }).catch(() => { });
+  // ═══ BRIER PROTOCOL: report this paper bet to the reputation layer ═══
+  // probability = myProb (P of YES, whale-adjusted) — the number Brier scores.
+  // The reporter flips it to the side frame and skips no-signal commits itself.
+  reportPaperBet({ market, side, stake, tradeId, probability: myProb, marketYesPrice: market.yesPrice }).catch(() => { });
 
   try {
     const fgData = state?.prices?._meta?.fearGreed;
@@ -3330,14 +3374,27 @@ async function checkResolutions() {
   if (!pos.open.length) return;
   let changed = false;
 
-  // One batched request for every due market instead of one per position
+  // One batched request for every due market instead of one per position.
+  // Gamma's /markets?id=… EXCLUDES closed markets by default — and every due
+  // position is (by definition) past close. Without closed=true the batch came
+  // back [] forever, positions never resolved, and all slots stayed full.
   const dueIds = [...new Set(pos.open
     .filter(p => !p.resolved && p.closesAt && Date.now() >= new Date(p.closesAt).getTime())
     .map(p => p.marketId))];
   const marketById = new Map();
   if (dueIds.length > 0) {
-    const batch = await polyFetch('/markets?' + dueIds.map(i => 'id=' + encodeURIComponent(i)).join('&'));
+    const q = dueIds.map(i => 'id=' + encodeURIComponent(i)).join('&');
+    const batch = await polyFetch(`/markets?${q}&closed=true`);
     if (Array.isArray(batch)) batch.forEach(m => marketById.set(String(m.id), m));
+    // Not-yet-flagged-closed stragglers: direct per-id lookup (bounded).
+    const missing = dueIds.filter(i => !marketById.has(String(i))).slice(0, 20);
+    for (const id of missing) {
+      const m = await polyFetch(`/markets/${encodeURIComponent(id)}`);
+      if (m && m.id) marketById.set(String(m.id), m);
+    }
+    if (marketById.size === 0) {
+      console.log(`[RESOLVE] ⚠ ${dueIds.length} positions due but Gamma returned none — will retry next cycle`);
+    }
   }
 
   for (let i = pos.open.length - 1; i >= 0; i--) {

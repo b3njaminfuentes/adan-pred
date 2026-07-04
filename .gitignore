@@ -11,3 +11,10 @@ quant/.ipynb_checkpoints/
 dashboard.log
 dashboard_dump.html
 *.webp
+*.log
+*.log.*
+adan_test*.log
+qa_adan.log
+watchdog.log
+.env.bak*
+.env.qa
