@@ -202,25 +202,18 @@ function normalizePolymarket(raw, prices = {}) {
   const id = String(raw.id || raw.conditionId || '');
   const title = raw.question || raw.title || raw._eventTitle || 'Unknown';
 
-  // Parse outcome prices — outcomePrices[0] = YES/UP price, [1] = NO/DOWN price
-  let yesPrice = 0.5;
-  try {
-    if (raw.outcomePrices) {
-      const op = typeof raw.outcomePrices === 'string' ? JSON.parse(raw.outcomePrices) : raw.outcomePrices;
-      if (Array.isArray(op) && op.length >= 2) {
-        const p0 = parseFloat(op[0]);
-        const p1 = parseFloat(op[1]);
-        // Use bestBid if available (more accurate live price)
-        if (raw.bestBid != null) yesPrice = parseFloat(raw.bestBid) || 0.5;
-        else yesPrice = isNaN(p0) ? 0.5 : p0;
-      }
-    } else if (raw.bestBid != null) {
-      yesPrice = parseFloat(raw.bestBid) || 0.5;
-    }
-  } catch { }
+  // Real two-sided quote or nothing. A market without a live book is untradeable:
+  // no silent 0.5 fallback (it fabricated edge out of API failures for weeks).
+  // Gamma /events markets carry bestBid/bestAsk; empty books show 0/1 and are rejected.
+  const bestBid = raw.bestBid != null ? parseFloat(raw.bestBid) : NaN;
+  const bestAsk = raw.bestAsk != null ? parseFloat(raw.bestAsk) : NaN;
+  if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk) ||
+      bestBid <= 0 || bestAsk >= 1 || bestAsk <= bestBid) return null;
+  const spread = bestAsk - bestBid;
 
-  // Apply Particle Filter: smooths out noise spikes and tracks true underlying probability
-  yesPrice = applyParticleFilter(id, yesPrice);
+  // Mid as model input; the particle filter smooths the MODEL price only,
+  // never the executable quotes (fills use bestBid/bestAsk downstream).
+  let yesPrice = applyParticleFilter(id, (bestBid + bestAsk) / 2);
 
   // Skip markets that are already decided (price at extreme = resolved/nearly resolved)
   if (yesPrice >= 0.85 || yesPrice <= 0.15) return null;
@@ -241,14 +234,17 @@ function normalizePolymarket(raw, prices = {}) {
   const wMatch = title.match(/(\d+):(\d+)\w*[-–](\d+):(\d+)/);
   if (wMatch) {
     const s = parseInt(wMatch[1]) * 60 + parseInt(wMatch[2]);
-    const e = parseInt(wMatch[3]) * 60 + parseInt(wMatch[4]);
-    windowMin = Math.abs(e - s) || 5;
+    let e = parseInt(wMatch[3]) * 60 + parseInt(wMatch[4]);
+    if (e < s) e += 720; // 12h wrap: "12:55PM-1:00PM" is 5 min, not 715
+    windowMin = (e - s) || 5;
   } else if (/\b9PM ET\b|\b9pm ET\b/.test(title)) {
     windowMin = 60;
   } else if (/\b4:00PM-8:00PM\b|\b8:00PM-12:00AM\b/.test(title)) {
     windowMin = 240;
   }
-  if (raw._isUpDown && !windowMin) windowMin = 5;
+  // No default: a title that doesn't positively declare its window stays
+  // windowMin=null and is excluded by the strict 5/15min funnel downstream.
+  // (The old `_isUpDown → 5` default let hourly markets masquerade as 5min.)
 
   // Extract price target from title if possible
   const targetMatch = title.match(/\$([0-9,]+)/);
@@ -280,7 +276,7 @@ function normalizePolymarket(raw, prices = {}) {
   } catch { }
   // CTF conditionId — required by Brier's ResolutionWatcher to settle paper bets
   const conditionId = raw.conditionId || raw.condition_id || null;
-  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds, conditionId };
+  return { id, title, yesPrice, bestBid, bestAsk, spread, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds, conditionId };
 }
 
 // ── Check market resolution via Polymarket API (for long-horizon non-crypto) ──

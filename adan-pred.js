@@ -2656,6 +2656,43 @@ async function evaluate_and_trade(decision, prices, state) {
     return;
   }
 
+  // Circuit breaker window: reading continues, new trades are vetoed.
+  if (global._cbPausedUntil && Date.now() < global._cbPausedUntil) {
+    console.log('[CIRCUIT BREAKER] ⏸ Trade veto active — skipping new bet');
+    recordAdanShadow(decision, market, 'CIRCUIT_BREAKER');
+    return;
+  }
+
+  // ═══ DEDUP GUARD (universal, all callers) ═══
+  // 50 of the first 103 positions were re-entries into a market window already
+  // traded: correlated bets that inflate apparent sample size. One market
+  // window = one position, whether it is still open or already closed.
+  {
+    const posNow = loadPositions();
+    const mKey = market.id || market.conditionId;
+    const alreadyOpen = (posNow.open || []).some(q => (q.marketId || q.conditionId) === mKey);
+    const nowMs = Date.now();
+    const recentlyTraded = (posNow.closed || []).some(q =>
+      (q.marketId || q.conditionId) === mKey && q.closesAt && new Date(q.closesAt).getTime() > nowMs);
+    if (alreadyOpen || recentlyTraded) {
+      console.log(`[DEDUP] ⏭ Already positioned in this market window: ${(market.title || '').slice(0, 40)}`);
+      recordAdanShadow(decision, market, 'DUPLICATE_WINDOW');
+      return;
+    }
+  }
+
+  // ═══ TILT GUARD (asset cooldown — salvaged from the parked oracle path) ═══
+  // 2 consecutive losses on the same asset → skip one cycle on that asset.
+  {
+    const assetT = (market.asset || '').toLowerCase();
+    const recentClosed = (loadPositions().closed || []).filter(q => (q.asset || '').toLowerCase() === assetT).slice(-2);
+    if (recentClosed.length >= 2 && recentClosed.every(q => q.result === 'LOSS')) {
+      console.log(`[TILT GUARD] ⏸ 2 consecutive losses on ${assetT.toUpperCase()} — cooling down 1 cycle`);
+      recordAdanShadow(decision, market, 'TILT_COOLDOWN');
+      return;
+    }
+  }
+
   // Rule 2: Drawdown > 20% → Dream Mode ONCE per episode, then PROBATION — a
   // middle term, not a coma. The old full stop measured drawdown against a
   // frozen peak: with betting vetoed and no open positions left, the fund
@@ -2843,10 +2880,24 @@ async function evaluate_and_trade(decision, prices, state) {
     myProb = adjustedProb; // whale adjustment now applies
   }
 
-  const obData = orderBook.analyze(smData);
+  // Canonical executable quote: fresh WS book if available, else Gamma bestBid/bestAsk.
+  // No finite two-sided quote → hard SKIP. This is what fills and the spread veto use.
+  const tokId = Array.isArray(market.clobTokenIds) ? market.clobTokenIds[0] : null;
+  const wsBook = tokId ? polymarketWS.getBook(tokId) : null;
+  const quote = (wsBook && wsBook.bestBid > 0 && wsBook.bestAsk < 1 && Date.now() - (wsBook.lastUpdate || 0) < 30000)
+    ? { bestBid: wsBook.bestBid, bestAsk: wsBook.bestAsk, liquidity: market.liquidity, volume24h: market.volume24h }
+    : { bestBid: market.bestBid, bestAsk: market.bestAsk, liquidity: market.liquidity, volume24h: market.volume24h };
+  if (!Number.isFinite(quote.bestBid) || !Number.isFinite(quote.bestAsk) || quote.bestAsk <= quote.bestBid) {
+    console.log(`[QUOTE] ⛔ No executable book for ${(market.title || '').slice(0, 40)} — skipping`);
+    recordAdanShadow(decision, market, 'NO_QUOTE');
+    return;
+  }
+
+  const obData = orderBook.analyze(quote);
   const effectiveEdge = obData.available ? orderBook.adjustEdge(edge, obData) : edge;
   if (obData.available && obData.recommendation === 'AVOID_WIDE_SPREAD') {
     console.log('[ORDER BOOK] ⛔ Wide spread:', obData.spreadPct + '% — skipping');
+    recordAdanShadow(decision, market, 'WIDE_SPREAD');
     return;
   }
 
@@ -2946,7 +2997,9 @@ async function evaluate_and_trade(decision, prices, state) {
 
   // ═══ QUANT: Master System Prompt EV Check ═══
   const p = side === 'YES' ? myProb : 1 - myProb;
-  const rawOdds = side === 'YES' ? market.yesPrice : (1 - market.yesPrice);
+  // EV against the EXECUTABLE price (taker fill), not the mid: the spread is
+  // part of the cost of every trade and must be paid inside the EV math.
+  const rawOdds = side === 'YES' ? quote.bestAsk : (1 - quote.bestBid);
   const potentialProfit = (1 / Math.max(rawOdds, 0.01)) - 1;
   const ev = (p * potentialProfit) - (1 - p);
 
@@ -2961,6 +3014,45 @@ async function evaluate_and_trade(decision, prices, state) {
       fs.appendFileSync(evLogPath, JSON.stringify({ ts: new Date().toISOString(), marketId: market.id, title: market.title, ev, p, rawOdds, side }) + '\n');
     } catch { }
     return;
+  }
+
+  // ═══ META-LABEL ARBITER (López de Prado ch.3) ═══
+  // The quant scanner already chose the side. The LLM answers a smaller,
+  // honest question: act on this signal or not, and at what size fraction.
+  // FAIL-OPEN: null/timeout/parse failure → quant decision proceeds unchanged.
+  // (Mapping null to veto would recreate the 100%-blocked oracle path.)
+  try {
+    const metaPrompt = [
+      `Signal: ${side} on "${(market.title || '').slice(0, 80)}" (${market.asset}, ${market.windowMin}min window).`,
+      `P(chosen side) ${(decision.pSide != null ? decision.pSide * 100 : confidence).toFixed(0)}%, net edge ${(edge * 100).toFixed(1)}%, EV ${ev.toFixed(3)}.`,
+      `Book: bid ${(quote.bestBid * 100).toFixed(1)} / ask ${(quote.bestAsk * 100).toFixed(1)} (spread ${((quote.bestAsk - quote.bestBid) * 100).toFixed(1)}%), liquidity $${Math.round(market.liquidity || 0)}.`,
+      `Risk state: drawdown ${(markov.current_drawdown_pct * 100).toFixed(1)}%, streak ${pnlNow.streak || 0}, open positions ${markov.positions_open}.`,
+      `Source: ${decision._childSpec || 'fast-path'}.`,
+      `You are the risk arbiter, NOT the forecaster. The side is already chosen by a quant model.`,
+      `Veto ONLY on concrete risk grounds (spread too wide for the edge, EV marginal vs cost, correlated exposure, degraded regime).`,
+      `Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "reason": "<max 15 words>"}`,
+    ].join('\n');
+    const metaRaw = await Promise.race([
+      routeLLM({ systemPrompt: 'You are a trading risk arbiter. JSON only.', userPrompt: metaPrompt, weight: 'Light', reason: 'meta_label' }),
+      new Promise(resolve => setTimeout(() => resolve(null), 8000)),
+    ]);
+    if (metaRaw) {
+      const metaJson = (metaRaw.match(/\{[\s\S]*\}/) || [null])[0];
+      const meta = metaJson ? JSON.parse(metaJson) : null;
+      if (meta && meta.bet === false) {
+        console.log(`[META-LABEL] ⛔ LLM veto: ${meta.reason || 'no reason'}`);
+        recordAdanShadow(decision, market, 'META_LABEL_VETO');
+        return;
+      }
+      if (meta && typeof meta.sizeMult === 'number' && meta.sizeMult >= 0.3 && meta.sizeMult < 1) {
+        console.log(`[META-LABEL] ⚠️ LLM resize ×${meta.sizeMult.toFixed(2)}: ${meta.reason || ''}`);
+        decision._metaStakeReduction = meta.sizeMult;
+      }
+    } else {
+      console.log('[META-LABEL] (no LLM opinion — quant decision proceeds)');
+    }
+  } catch (metaErr) {
+    console.log('[META-LABEL] error (fail-open):', metaErr.message);
   }
 
   // ═══ COMBINED STAKE (Kelly × Mother Code multipliers with floor) ═══
@@ -3162,24 +3254,33 @@ async function evaluate_and_trade(decision, prices, state) {
     : (1 - (pState?.trueProbability || market.yesPrice));
   lmsrEngine.recordPrediction(predId, effectiveProb, side);
 
-  // ═══ QUANT: Limit Order Sniper ═══
-  // Passive sniping: place order 0.5% better than last price to capture spread or avoid slippage
-  const bestBid = market.bestBid || market.yesPrice;
-  const bestAsk = market.bestAsk || market.yesPrice;
-  const sniperPrice = side === 'YES' ? Math.min(bestBid + 0.005, 0.99) : Math.max(bestAsk - 0.005, 0.01);
-  console.log(`[LIMIT SNIPER] 🎯 Snipe Target: ${(sniperPrice * 100).toFixed(1)}% (Mark: ${(market.yesPrice * 100).toFixed(1)}%)`);
+  // ═══ FILL: taker at the real book ═══
+  // YES buys at the ask; NO shares cost (1 - bid) — selling YES to the bid.
+  // No jitter, no sniper fiction: the spread is paid for real, at entry.
+  const fillPrice = side === 'YES' ? quote.bestAsk : (1 - quote.bestBid);
+  if (fillPrice <= 0.01 || fillPrice >= 0.99) {
+    console.log(`[FILL] ⛔ Untradeable fill ${(fillPrice * 100).toFixed(1)}% on ${(market.title || '').slice(0, 40)} — skipping`);
+    recordAdanShadow(decision, market, 'UNTRADEABLE_FILL');
+    return;
+  }
+  console.log(`[FILL] 💵 ${side} @ ${(fillPrice * 100).toFixed(1)}% (bid ${(quote.bestBid * 100).toFixed(1)} / ask ${(quote.bestAsk * 100).toFixed(1)}, spread ${((quote.bestAsk - quote.bestBid) * 100).toFixed(1)}%)`);
 
   const pos = loadPositions();
   pos.open.push({
     id: Date.now().toString(),
     marketId: market.id,
+    conditionId: market.conditionId || null,
     marketTitle: market.title,
     asset: market.asset || 'other',
     side, myProb,
-    // Simulate execution latency: price may slip 0.1-0.5% during 1-3 sec fill
-    marketPrice: market.yesPrice + (Math.random() - 0.4) * 0.005, // slight adverse fill bias
-    sniperPrice, // The passive limit price we are "sniping" at
-    isLimitSnipe: true,
+    pYes: myProb, // explicit frame tag: myProb IS P(YES) from here on
+    pSide: side === 'YES' ? myProb : 1 - myProb,
+    rawConfidence: decision?.rawConfidence ?? confidence, // pre-metacalib, for honest recalibration
+    marketPrice: market.yesPrice, // YES-frame mark (greeks/filters/soul read this)
+    entryPrice: fillPrice,        // chosen-side executable fill
+    entryBestBid: quote.bestBid,
+    entryBestAsk: quote.bestAsk,
+    spreadAtEntry: quote.bestAsk - quote.bestBid,
     edge, confidence,
     stake,
     marketLiquidity: market.liquidity || 0,
@@ -3207,6 +3308,14 @@ async function evaluate_and_trade(decision, prices, state) {
       asset: market.asset || 'other',
       windowMin: market.windowMin || 5,
       side, myProb,
+      pYes: myProb,
+      pSide: side === 'YES' ? myProb : 1 - myProb,
+      marketId: market.id,
+      conditionId: market.conditionId || null,
+      entryPrice: fillPrice,
+      entryBestBid: quote.bestBid,
+      entryBestAsk: quote.bestAsk,
+      spreadAtEntry: quote.bestAsk - quote.bestBid,
       marketProb: market.yesPrice,
       edgeDeclared: edge,
       confidence, stake,
@@ -3426,37 +3535,30 @@ async function checkResolutions() {
     yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
     const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
-    // Slippage simulation: dynamic based on liquidity (v6.1 — was fixed 1.5%)
-    const liq = p.marketLiquidity || p.stake * 10 || 1000;
-    const SLIPPAGE = Math.max(0.005, Math.min(0.03, 50 / liq)); // 0.5%-3% based on liquidity
+    // Payoff against the REAL fill. Positions opened after the rewire carry
+    // entryPrice (chosen-side taker fill: YES@ask, NO@1-bid); legacy positions
+    // fall back to the old side-adjusted mark. No slippage simulation: the
+    // spread is now genuinely paid at entry, simulating it again double-charges.
+    const effectivePrice = p.entryPrice ?? (p.side === 'YES' ? p.marketPrice : (1 - p.marketPrice));
     let pnlVal;
     if (won) {
-      // For NO bets, effective price is (1 - marketPrice) since marketPrice stores YES price
-      const effectivePrice = p.side === 'YES' ? p.marketPrice : (1 - p.marketPrice);
       const mult = 1 / Math.max(effectivePrice, 0.01);
-      const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit slippage
-      const grossProfit = p.stake * (mult - 1) - slippageCost;
-      // Polymarket REAL fees: taker fee on crypto = 0.25 feeRate, exponent 2
-      // fee = C × p × feeRate × (p × (1-p))^2  — max 1.56% at p=0.50
-      // We pay taker fee on ENTRY (buy) + no fee on resolution (market settles)
+      const grossProfit = p.stake * (mult - 1);
+      // Polymarket taker fee on entry: fee = C × p × 0.25 × (p(1-p))^2 — max ~1.56% at p=0.5.
+      // No maker rebate: fills are taker-at-ask now.
       const ep = effectivePrice;
       const takerFee = p.stake * 0.25 * ep * Math.pow(ep * (1 - ep), 2);
-      // Maker rebate: 20% of taker fee returned if we used limit orders (we do via sniper)
-      const makerRebate = takerFee * 0.20;
-      const netFee = takerFee - makerRebate;
-      pnlVal = parseFloat((grossProfit - netFee).toFixed(2));
+      pnlVal = parseFloat((grossProfit - takerFee).toFixed(2));
     } else {
-      // LOSS: stake lost + taker fee paid on entry
-      const lossPrice = p.side === 'YES' ? p.marketPrice : (1 - p.marketPrice);
-      const lossFee = p.stake * 0.25 * lossPrice * Math.pow(lossPrice * (1 - lossPrice), 2);
-      const lossRebate = lossFee * 0.20;
-      pnlVal = parseFloat((-p.stake - (lossFee - lossRebate)).toFixed(2));
+      const lossFee = p.stake * 0.25 * effectivePrice * Math.pow(effectivePrice * (1 - effectivePrice), 2);
+      pnlVal = parseFloat((-p.stake - lossFee).toFixed(2));
     }
     console.log('[DEBUG-TRACE] Math & PNL OK');
 
     // BRIER SCORE CALCULATION (Calibration metric)
     const actual = yesWon ? 1 : 0;
-    const pred = p.side === 'YES' ? (p.confidence / 100) : (1 - (p.confidence / 100));
+    // pYes is the explicit P(YES) stored at entry post-rewire; legacy fallback infers from side-frame confidence.
+    const pred = p.pYes ?? (p.side === 'YES' ? (p.confidence / 100) : (1 - (p.confidence / 100)));
     const brierScore = parseFloat(Math.pow(pred - actual, 2).toFixed(4));
 
     p.resolved = true; p.won = won; p.pnl = pnlVal; p.result = won ? 'WIN' : 'LOSS'; p.brierScore = brierScore;
@@ -3469,7 +3571,9 @@ async function checkResolutions() {
     console.log('[DEBUG-TRACE] Arrays spiced');
     resolveHypothesis(p.marketId, won);
     console.log('[DEBUG-TRACE] resolveHypothesis OK');
-    updateMetaCalib(p.confidence || 65, won);
+    // Feed RAW (pre-metacalib) confidence: bucketing the already-calibrated
+    // value made the multiplier compound on itself every generation.
+    updateMetaCalib(p.rawConfidence ?? p.confidence ?? 65, won);
     console.log('[DEBUG-TRACE] updateMetaCalib OK');
     promoteInsightsToSoul();
     console.log('[DEBUG-TRACE] promoteInsightsToSoul OK');
@@ -3561,7 +3665,7 @@ async function checkResolutions() {
 
     // Concept #20A: Triple Barrier — label the resolved trade
     try {
-      const entryP = p.sniperPrice || p.marketPrice || 0.5;
+      const entryP = p.entryPrice || p.marketPrice || 0.5;
       const exitP = won ? entryP * 1.01 : entryP * 0.99; // approximation from binary outcome
       const vol = p.entryVec?.[3] || 1; // volatility from feature vector
       const tbLabel = tripleBarrier.labelTrade(entryP, exitP, p.side, p.barsHeld || 5, vol);
@@ -3744,7 +3848,8 @@ async function checkResolutions() {
         });
       }
     } catch (fcErr) { console.error('[FORECAST] Outcome recording error:', fcErr.message); }
-    await new Promise(r => setTimeout(r, 1000));
+    // (1s-per-resolution sleep removed: at 60s cadence it starved the loop
+    // whenever several 5min windows resolved together.)
   }
   if (changed) {
     savePositions(pos);
@@ -3815,7 +3920,11 @@ async function doScan(state) {
   // 2. Fetch Polymarket markets — gated by config.venues.polymarket
   state.status = 'Fetching Polymarket markets...'; render(state);
   const rawMkts = (config?.venues?.polymarket === false) ? [] : await fetchPolymarkets(strat);
-  const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
+  // FOCUS: crypto up/down 5-15min only. Anything without a positively-parsed
+  // 5 or 15 minute window (hourly, 4h, daily, unparseable) is out of scope.
+  const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices))
+    .filter(m => m && m.id && m.title)
+    .filter(m => m.windowMin === 5 || m.windowMin === 15);
 
   // 2.05 Polymarket WebSocket: subscribe to all active market token IDs
   try {
@@ -4233,7 +4342,12 @@ async function doScan(state) {
       side: ct.side,
       edge_pct: netEdgeCt * 100,
       confidence_pct: calibConf,
-      myProb: calibConf / 100,
+      // myProb is P(YES) — downstream (Kelly, EV gate, Brier reporter) flips for NO.
+      // calibConf is confidence in the CHOSEN side, so convert frames here.
+      myProb: ct.side === 'YES' ? calibConf / 100 : 1 - calibConf / 100,
+      pSide: calibConf / 100,
+      pYes: ct.side === 'YES' ? calibConf / 100 : 1 - calibConf / 100,
+      rawConfidence: ct.intel.confidence || 0,
       edge: netEdgeCt,
       confidence: calibConf,
       thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% calibConf:${calibConf}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Net edge (after fees): ${(netEdgeCt * 100).toFixed(1)}%. Half-Kelly sizing.`,
@@ -4248,7 +4362,20 @@ async function doScan(state) {
     console.log(`[CHILD DIRECT] 📊 ${childDirectTrades.length} child-driven trade(s) executed. Gemini brain skipped for covered markets.`);
   }
 
-  // 4. Think (Neural Pipeline) — only for markets NOT covered by children
+  // 4. ORACLE PARKED (default). The Gemini oracle brain executed 0 of the
+  // first 91 real trades (all came from CHILD DIRECT) while consuming ~670
+  // LLM calls per 2 days. The LLM now serves as meta-label arbiter inside
+  // evaluate_and_trade instead. Re-enable the oracle only with ADAN_ORACLE=on.
+  if (process.env.ADAN_ORACLE !== 'on') {
+    state.thought = childDirectTrades.length > 0
+      ? `[QUANT PIPELINE] ${childDirectTrades.length} child signal(s) this cycle. Oracle parked; LLM arbitrates inside evaluate_and_trade.`
+      : '[QUANT PIPELINE] No qualifying child signal this cycle. Oracle parked.';
+    state.mode = 'result';
+    state.lastScan = new Date().toLocaleTimeString();
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
+    render(state);
+    return;
+  }
   state.mode = 'thinking'; render(state);
   let decision;
   try {
@@ -4500,12 +4627,15 @@ async function main() {
       lastHumanState = humanContext.state;
 
       // ── Mother Code: Circuit Breaker (LVL 5+) ──
+      // Flag, not inline sleep: keep READING markets and resolving positions
+      // every cycle; only veto NEW trades until the pause window passes.
       const xpNow = expProgress(state.pnl.exp || 0);
-      if (xpNow.level >= 5 && consecutiveLosses >= 5) {
-        console.log('[CIRCUIT BREAKER] ⚡ 5 consecutive losses — pausing 10min');
-        await new Promise(r => setTimeout(r, 600000));
+      if (xpNow.level >= 5 && consecutiveLosses >= 5 && !global._cbPausedUntil) {
+        console.log('[CIRCUIT BREAKER] ⚡ 5 consecutive losses — no new trades for 10min (loop keeps running)');
+        global._cbPausedUntil = Date.now() + 600000;
         consecutiveLosses = 0;
       }
+      if (global._cbPausedUntil && Date.now() > global._cbPausedUntil) global._cbPausedUntil = null;
 
       // ── Mother Code: Apoptosis check — DISABLED FOR TRAINING ──
       // Paper trading: we want ADAN to keep running and evolving regardless of fund level.
@@ -4620,13 +4750,21 @@ async function main() {
             // v7: Apply meta-calibration to fast path too
             const mcFast = loadMetaCalib();
             const calibFastConf = Math.round((childIntel?.confidence || 0) * (mcFast.multiplier || 1.0));
-            const netFastEdge = edge - 0.017; // fees + slippage
+            // Edge = child's side-frame prob vs the side-adjusted market price
+            // (same definition as CHILD DIRECT), not the old |yesPrice-0.5| skew.
+            const sideFast = childIntel?.direction === 'UP' ? 'YES' : 'NO';
+            const mispricingFast = (calibFastConf / 100) - (sideFast === 'YES' ? nm.yesPrice : 1 - nm.yesPrice);
+            const netFastEdge = mispricingFast - 0.017; // fees
             const _optFast = selfOptimizer.loadParams();
             if (childIntel && calibFastConf >= _optFast.confGate && netFastEdge > _optFast.minEdge) {
               const fastDecision = {
                 action: 'BET', market: nm,
                 side: childIntel.direction === 'UP' ? 'YES' : 'NO',
-                myProb: calibFastConf / 100,
+                // myProb is P(YES); calibFastConf is side-frame confidence → convert.
+                myProb: childIntel.direction === 'UP' ? calibFastConf / 100 : 1 - calibFastConf / 100,
+                pSide: calibFastConf / 100,
+                pYes: childIntel.direction === 'UP' ? calibFastConf / 100 : 1 - calibFastConf / 100,
+                rawConfidence: childIntel?.confidence || 0,
                 edge: netFastEdge,
                 edge_pct: netFastEdge * 100,
                 confidence: calibFastConf,

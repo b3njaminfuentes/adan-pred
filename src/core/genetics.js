@@ -158,9 +158,13 @@ function absorbEliteGenome(pnl) {
   const children = pnl.children || [];
   if (!children.length) return;
 
-  // ADAN FIX 1: Lower threshold to 50% WR to allow active learning from any winner
-  // regardless of the father's massive statistical inertia (1000+ trades).
-  const thresholdWR = 0.50;
+  // STATISTICAL GATE: absorption pushes a child's DNA into the LIVE parent
+  // weights, so the entry bar must be evidence, not a lucky streak. A raw-WR
+  // gate at n=5 once absorbed a child with 14/18 wins the moment it went
+  // bankrupt. Now: minimum 30 resolved trades AND Wilson 95% lower bound ≥ 0.50
+  // (i.e. we are statistically confident the true WR is above a coin flip).
+  const MIN_ABSORB_TRADES = 30;
+  const MIN_ABSORB_WILSON = 0.50;
   let bestChild = null;
   let bestScore = -Infinity;
 
@@ -172,14 +176,11 @@ function absorbEliteGenome(pnl) {
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { continue; }
 
     if (!cp.dna) continue;                          // child without mutation = not applicable
-    if ((cp.trades || 0) < 5) continue;             // GENETIC FIX: lowered from 10→5 for bootstrap
-    const childWR = cp.trades > 0 ? (cp.wins || 0) / cp.trades : 0;
+    if ((cp.trades || 0) < MIN_ABSORB_TRADES) continue;
+    const childWilson = wilsonLower(cp.wins || 0, cp.trades || 0);
+    if (childWilson < MIN_ABSORB_WILSON) continue;
 
-    // Compare against absolute winning threshold (50%) instead of lifetime lifetime average
-    if (childWR < thresholdWR) continue;
-
-    // Wilson lower bound: sample size already priced in
-    const score = wilsonLower(cp.wins || 0, cp.trades || 0) * 100;
+    const score = childWilson * 100;
     if (score > bestScore) {
       bestScore = score;
       bestChild = { ...ch, cp };
@@ -362,8 +363,23 @@ function pruneDeadChildren(pnl) {
     const mutatedDNA = {};
     const MUTATION_RATE = 0.15;
     for (const key of allKeys) {
-      if (key === 'generation' || key === 'cognitiveStyle' || key === 'crossoverFrom' || key === 'isElite' || key === 'mutation') {
+      if (key === 'generation' || key === 'crossoverFrom' || key === 'isElite') {
         mutatedDNA[key] = dna1[key] ?? dna2[key];
+        continue;
+      }
+      // DIVERSITY FIX: cognitiveStyle/mutation were inherited verbatim from the
+      // winning parent, which collapsed the whole population to one style
+      // (8 of 9 live children ended up 'bollinger_vol'). Re-sample instead:
+      // 60% keep a parent's style, 40% explore a random style.
+      if (key === 'cognitiveStyle') {
+        const STYLES = ['volume_vwap', 'bollinger_vol', 'rsi_reversal'];
+        mutatedDNA[key] = Math.random() < 0.6
+          ? (Math.random() < 0.5 ? dna1[key] : dna2[key]) ?? STYLES[Math.floor(Math.random() * STYLES.length)]
+          : STYLES[Math.floor(Math.random() * STYLES.length)];
+        continue;
+      }
+      if (key === 'mutation') {
+        mutatedDNA[key] = Math.floor(Math.random() * 3); // fresh seed, not inherited
         continue;
       }
       // 50/50 crossover: pick from parent1 or parent2

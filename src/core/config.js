@@ -17,7 +17,7 @@ const DYN_WEIGHTS_PATH = path.join(DIR, 'dynamic_weights.json'); // P5: auto-mod
 // ── APIs ───────────────────────────────────────────────────────────────────
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const BINANCE_API = 'https://api.binance.com/api/v3';
-const SCAN_INTERVAL_MS = 90 * 1000; // 90sec — TRAINING MODE: max speed
+const SCAN_INTERVAL_MS = 60 * 1000; // 60sec — read the market every minute (oracle parked; loop body is quant-only)
 const MAX_POSITIONS = 18;    // TRAINING: más slots = más trades simultáneos
 const MIN_EDGE = 0.01;  // TRAINING: 1% edge — más agresivo para generar trades a Brier
 const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k

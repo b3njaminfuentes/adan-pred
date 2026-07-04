@@ -64,12 +64,15 @@ function emptyStats() {
 function addTrade(s, tr) {
   const won = tr.res.won ? 1 : 0;
   s.n++; s.wins += won;
-  // prob space, from the bet's own side: myProb vs price paid
-  const price = tr.side === 'YES' ? tr.marketProb : 1 - tr.marketProb;
-  s.edgeDeclared += (tr.myProb || 0.5) - price;
+  // prob space, from the bet's own side. Post-rewire records carry explicit
+  // pSide (P of chosen side) and entryPrice (real fill); legacy records stored
+  // myProb in side frame, so it doubles as pSide for them.
+  const pSide = tr.pSide ?? (tr.myProb || 0.5);
+  const price = tr.entryPrice ?? (tr.side === 'YES' ? tr.marketProb : 1 - tr.marketProb);
+  s.edgeDeclared += pSide - price;
   s.edgeRealized += won - price;
-  const bi = BUCKETS.findIndex(([lo, hi]) => tr.myProb >= lo && tr.myProb < hi);
-  if (bi >= 0) { const b = s.buckets[bi]; b.n++; b.predSum += tr.myProb; b.wins += won; }
+  const bi = BUCKETS.findIndex(([lo, hi]) => pSide >= lo && pSide < hi);
+  if (bi >= 0) { const b = s.buckets[bi]; b.n++; b.predSum += pSide; b.wins += won; }
 }
 
 function finalize(s) {
