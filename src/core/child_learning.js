@@ -170,16 +170,20 @@ class ChildLearningEngine {
                 continue;
             }
 
-            // ── Quant track: resolve by price movement (existing logic) ──
+            // ── Quant track: resolve by price movement ──
             const closeTime = new Date(s.marketCloseTime).getTime();
             if (closeTime > now) continue; // Not closed yet
 
             try {
                 const sym = this._assetToSymbol(s.asset);
-                const currentPrice = prices?.[sym]?.price;
-                if (!currentPrice) continue;
-
                 if (!s.entryPrice || s.entryPrice <= 0) continue; // No valid entryPrice — skip
+
+                // Grade at WINDOW CLOSE, not at whatever moment this loop runs.
+                // Grading against the current price added resolution-timing noise
+                // to the exact metric that decides which child is "elite".
+                const closePrice = await this._priceAtTime(sym, closeTime);
+                const currentPrice = closePrice ?? prices?.[sym]?.price; // fail-soft fallback
+                if (!currentPrice) continue;
 
                 const pctChange = (currentPrice - s.entryPrice) / s.entryPrice;
                 const actualDirection = pctChange > 0.001 ? 'UP' : pctChange < -0.001 ? 'DOWN' : 'NEUTRAL';
@@ -731,6 +735,20 @@ class ChildLearningEngine {
     _assetToSymbol(asset) {
         const map = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', xrp: 'XRPUSDT' };
         return map[asset?.toLowerCase()] || asset;
+    }
+
+    // Binance 1m close at (or just before) tsMs — the honest grading price for
+    // a window that closed at tsMs. Returns null on any failure (caller falls
+    // back to current price rather than skipping resolution forever).
+    async _priceAtTime(sym, tsMs) {
+        try {
+            const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1m&startTime=${tsMs - 120000}&endTime=${tsMs}&limit=3`;
+            const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+            if (!res.ok) return null;
+            const k = await res.json();
+            if (Array.isArray(k) && k.length) return parseFloat(k[k.length - 1][4]);
+        } catch { }
+        return null;
     }
 
     _printReport() {

@@ -3868,6 +3868,19 @@ async function checkResolutions() {
     const lastClosed = pos.closed[pos.closed.length - 1];
     if (lastClosed) evaluateParentPerformance(pnlFinal, lastClosed);
     checkUsurperPath(pnlFinal);
+
+    // DIRECTED MUTATIONS on outcomes, not on drawdowns. The learning loop
+    // correctly diagnoses where money bleeds (regime/hour/asset) but its fixes
+    // only fired inside dreamMode (i.e. after a >20% drawdown). Now every 5th
+    // resolution batch applies them, so learning tracks results continuously.
+    global._dirMutBatch = (global._dirMutBatch || 0) + 1;
+    if (global._dirMutBatch >= 5) {
+      global._dirMutBatch = 0;
+      try {
+        const muts = applyDirectedMutations();
+        if (muts.length) console.log(`[LEARNING] 🧬 ${muts.length} directed mutation(s) applied from resolution outcomes`);
+      } catch (e) { console.log('[LEARNING] directed mutation error:', e.message); }
+    }
   }
 }
 

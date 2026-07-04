@@ -262,13 +262,8 @@ function pruneDeadChildren(pnl) {
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { alive.push(ch); continue; }
 
     const fund = cp.fund || 0;
-    // Death 1: capital exhausted
-    if (fund <= 0 && (cp.trades || 0) >= 5) {
-      dead.push({ ...ch, deathReason: 'capital', finalWR: cp.trades > 0 ? Math.round(cp.wins / cp.trades * 100) : 0, finalTrades: cp.trades });
-      continue;
-    }
-    // Death 2: incompetence — but PROTECT children with good real accuracy
-    // Check real prediction accuracy from child_learning (resolved shadow bets)
+    // Real prediction accuracy from child_learning (resolved shadow bets) —
+    // computed BEFORE any death check so skill evidence can also veto capital death.
     const specSlug = (ch.spec || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
     const learnStats = childLearning.learning?.[specSlug] || childLearning.learning?.[ch.spec] || childLearning.learning?.[ch.spec?.toLowerCase()] || {};
     const realResolved = learnStats.totalResolved || 0;
@@ -277,6 +272,32 @@ function pruneDeadChildren(pnl) {
     // IMMUNITY by Wilson lower bound: protection must be earned with statistical
     // evidence, not a lucky streak. wilson>=0.40 with n>=10 ≈ "real skill plausible".
     const realWilson = realResolved >= 10 ? wilsonLower(learnStats.correct || 0, realResolved) : null;
+
+    // Death 1: capital exhausted.
+    // BAILOUT EXCEPTION: paper bankruptcy is an accounting event, not proof of a
+    // bad genome. A child with statistical skill evidence keeps its DNA AND its
+    // trade history (the absorption gate needs n>=30 of the SAME strategy — the
+    // old die/rebirth cycle reset counters every few hours so nothing ever
+    // accumulated evidence). Refill comes out of the treasury.
+    if (fund <= 0 && (cp.trades || 0) >= 5) {
+      const treasury = pnl.treasury || 0;
+      if (realWilson !== null && realWilson >= 0.40 && treasury >= 50) {
+        const refill = Math.min(250, treasury);
+        pnl.treasury = treasury - refill;
+        cp.fund = refill;
+        cp.bailouts = (cp.bailouts || 0) + 1;
+        cp.lastBailoutAt = new Date().toISOString();
+        try { fs.writeFileSync(cpPath, JSON.stringify(cp, null, 2)); } catch { }
+        pnl._bailoutHappened = true;
+        console.log(G + '  💰 BAILOUT: ' + (ch.name || ch.spec) + ' — wilson:' + realWilson.toFixed(2) + ' (' + realResolved + ' preds), refilled $' + refill + ' — DNA and history preserved' + X);
+        appendToSoul(`\n### CHILD BAILOUT — ${new Date().toISOString()}:\n${ch.name || ch.spec} went bankrupt but has statistical skill (wilson ${realWilson.toFixed(2)}, n=${realResolved}). Refilled $${refill} from treasury. Genome and trade history preserved (${cp.trades} trades, ${cp.wins} wins).\n`);
+        alive.push(ch);
+        continue;
+      }
+      dead.push({ ...ch, deathReason: 'capital', finalWR: cp.trades > 0 ? Math.round(cp.wins / cp.trades * 100) : 0, finalTrades: cp.trades });
+      continue;
+    }
+    // Death 2: incompetence — but PROTECT children with good real accuracy
     if (realWilson !== null && realWilson >= 0.40) {
       console.log(G + '  🛡️ IMMUNE: ' + (ch.name || ch.spec) + ' — wilson:' + realWilson.toFixed(2) + ' (' + realResolved + ' preds) — protected from death' + X);
       alive.push(ch);
@@ -308,7 +329,12 @@ function pruneDeadChildren(pnl) {
     alive.push(ch);
   }
 
-  if (dead.length === 0) return;
+  if (dead.length === 0) {
+    // Persist treasury mutation from bailouts even when nobody died this cycle.
+    if (pnl._bailoutHappened) { delete pnl._bailoutHappened; savePnL(pnl); }
+    return;
+  }
+  delete pnl._bailoutHappened;
 
   // Graba la muerte en SOUL.md
   for (const d of dead) {
