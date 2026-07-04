@@ -7,8 +7,23 @@
 import WebSocket from 'ws';
 import fs from 'fs';
 import path from 'path';
+import dns from 'dns';
 
-const WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+const WS_HOST = 'ws-subscriptions-clob.polymarket.com';
+const WS_URL = `wss://${WS_HOST}/ws/market`;
+// ISP DNS blocks Polymarket hosts. The REST client bypasses via dns.resolve4
+// on 1.1.1.1, but `new WebSocket(url)` uses dns.lookup (getaddrinfo), which
+// dns.setServers does NOT affect — so we pass a custom lookup that resolves
+// through 1.1.1.1 explicitly. Same trick, right layer.
+dns.setServers(['1.1.1.1', '8.8.8.8']);
+function cfLookup(hostname, options, callback) {
+  if (typeof options === 'function') { callback = options; options = {}; }
+  dns.resolve4(hostname, (err, addrs) => {
+    if (err || !addrs?.length) return callback(err || new Error('no A records'));
+    if (options && options.all) return callback(null, addrs.map(a => ({ address: a, family: 4 })));
+    callback(null, addrs[0], 4);
+  });
+}
 const HEARTBEAT_INTERVAL = 10_000; // 10s — Polymarket requirement
 const RECONNECT_DELAY = 5_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -49,7 +64,7 @@ export class PolymarketWS {
     }
 
     try {
-      this.ws = new WebSocket(WS_URL);
+      this.ws = new WebSocket(WS_URL, { lookup: cfLookup, servername: WS_HOST, headers: { Host: WS_HOST } });
 
       this.ws.on('open', () => {
         this.connected = true;
