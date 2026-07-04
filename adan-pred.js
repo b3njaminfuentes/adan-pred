@@ -61,6 +61,7 @@ import { externalData } from './src/api/external_data.js';
 import { polymarketWS } from './src/api/polymarket_ws.js';
 import { reportPaperBet, reportTelemetry, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty } from './src/api/brier-reporter.js';
 import { ledger as tradeLedger, wilsonLower, nightlyReport, applyDirectedMutations } from './src/core/learning_loop.js';
+import { priceWindow } from './src/core/window_pricer.js';
 
 import {
   TOP, BOT, row, sep, trow, sparkline, renderTreePanel, startDashboard, render,
@@ -4374,6 +4375,45 @@ async function doScan(state) {
   if (childDirectTrades.length > 0) {
     console.log(`[CHILD DIRECT] 📊 ${childDirectTrades.length} child-driven trade(s) executed. Gemini brain skipped for covered markets.`);
   }
+
+  // ═══ GAUSS PRICER: terminal-distribution model for Up/Down windows ═══
+  // Closed-form P(UP) from (move so far, time left, realized vol) vs the
+  // EXECUTABLE quote. This is the latency-edge thesis as a pricing model,
+  // not TA. Runs through the same evaluate_and_trade gates as everything.
+  try {
+    const gaussCandidates = [];
+    for (const m of tradeableMarkets) {
+      if (childTradedMarkets.has(m.id || m.conditionId)) continue;
+      if (!Number.isFinite(m.bestBid) || !Number.isFinite(m.bestAsk)) continue;
+      const g = await priceWindow(m);
+      if (!g) continue;
+      const side = g.pUp >= 0.5 ? 'YES' : 'NO';
+      const pSide = side === 'YES' ? g.pUp : 1 - g.pUp;
+      const exec = side === 'YES' ? m.bestAsk : (1 - m.bestBid);
+      const netEdge = pSide - exec - 0.017; // fees; spread already inside exec
+      if (netEdge < 0.03) continue;
+      gaussCandidates.push({ m, side, pSide, pYes: g.pUp, netEdge, g });
+    }
+    gaussCandidates.sort((a, b) => b.netEdge - a.netEdge);
+    for (const t of gaussCandidates.slice(0, 2)) {
+      const confG = Math.round(t.pSide * 100);
+      const decision = {
+        action: 'BET', market: t.m, side: t.side,
+        myProb: t.pYes, pSide: t.pSide, pYes: t.pYes,
+        rawConfidence: confG, confidence: confG, confidence_pct: confG,
+        edge: t.netEdge, edge_pct: t.netEdge * 100,
+        thought: `[GAUSS] z=${t.g.z.toFixed(2)} move=${(t.g.delta * 100).toFixed(3)}% left=${t.g.remainMin.toFixed(1)}min → P(UP)=${(t.g.pUp * 100).toFixed(1)}% vs exec ${((t.side === 'YES' ? t.m.bestAsk : 1 - t.m.bestBid) * 100).toFixed(1)}%. Net edge ${(t.netEdge * 100).toFixed(1)}%.`,
+        _childDirect: true,
+        _childSpec: `gauss-${t.m.asset}-${t.m.windowMin}min`,
+      };
+      console.log(`[GAUSS] 🎯 ${t.side} on ${(t.m.title || '').slice(0, 40)} | P(UP)=${(t.g.pUp * 100).toFixed(1)}% netEdge=${(t.netEdge * 100).toFixed(1)}%`);
+      await evaluate_and_trade(decision, prices, state);
+      childTradedMarkets.add(t.m.id || t.m.conditionId);
+    }
+    if (gaussCandidates.length) {
+      console.log(`[GAUSS] 📐 ${gaussCandidates.length} candidate(s) priced above threshold this cycle`);
+    }
+  } catch (gErr) { console.log('[GAUSS] error:', gErr.message); }
 
   // 4. ORACLE PARKED (default). The Gemini oracle brain executed 0 of the
   // first 91 real trades (all came from CHILD DIRECT) while consuming ~670

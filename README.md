@@ -17,7 +17,9 @@ Bot autónomo de paper trading para mercados **Polymarket crypto Up/Down de 5 a 
 Cada ~60 segundos (`SCAN_INTERVAL_MS`, `src/core/config.js`):
 
 1. **Leer:** mercados crypto Up/Down con ventana **positivamente identificada de 5 o 15 min** (`fetchPolymarkets` + filtro estricto en `doScan`). Sin bid/ask real de dos puntas el mercado se descarta: **no existe fallback a precio 0.5** (`normalizePolymarket`, `src/api/polymarket.js`).
-2. **Proponer:** los escáneres hijos (`CHILD_SPECS`, señales de RSI/volumen/VWAP/tendencia sobre Binance) eligen lado y confianza. Son el modelo primario: generaron el 100% de los trades reales desde el origen.
+2. **Proponer (dos modelos primarios):**
+   - **GAUSS** (`src/core/window_pricer.js`): modelo de distribución terminal. A mitad de ventana, con el movimiento ya hecho, el tiempo restante y la volatilidad realizada, P(UP) es un cálculo cerrado (CDF normal), no una corazonada. Es la tesis del edge de latencia hecha modelo de pricing: apuesta solo cuando P(UP) diverge del precio ejecutable neto de fees.
+   - **Escáneres hijos** (`CHILD_SPECS`, RSI/volumen/VWAP/tendencia sobre Binance): eligen lado y confianza, evolucionan por selección estadística.
 3. **Filtrar:** mispricing neto de fees > 3%, gate de confianza calibrada, dedup universal (una ventana de mercado = una posición), tilt guard por activo, circuit breaker por racha.
 4. **Cotizar:** libro L2 en vivo por WebSocket del CLOB (144 assets, DNS bypass vía 1.1.1.1) con fallback a bestBid/bestAsk de Gamma. Veto de spread ancho (`OrderBookIntel`).
 5. **EV real:** el valor esperado se calcula contra el **precio ejecutable** (ask para YES, 1-bid para NO), no contra el mid.
@@ -87,6 +89,7 @@ adan-llm-router.js        router Gemini multi-modelo con cuotas y backoff
 src/api/polymarket.js     Gamma REST (DNS bypass), normalización con libro real
 src/api/polymarket_ws.js  libro L2 del CLOB por WebSocket
 src/api/brier-reporter.js commits a Brier Protocol (dedup, conditionId, marco P(YES))
+src/core/window_pricer.js GAUSS: pricer de distribución terminal para ventanas Up/Down
 src/core/genetics.js      evolución de hijos: torneo, absorción, bailout, crossover
 src/core/child_learning.js shadows de hijos, calificación al cierre, DNA pools
 src/core/learning_loop.js ledger, Wilson, mutaciones dirigidas
