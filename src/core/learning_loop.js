@@ -176,12 +176,15 @@ export function directedHints(a = analyze()) {
 // its ledger evidence.
 const STEP = 0.10;
 const CONF_BOUNDS = [40, 80];
-const LEARNING_PATH = path.join(DIR, 'child_learning.json');
 
-export function applyDirectedMutations(hints = directedHints()) {
-  if (!fs.existsSync(LEARNING_PATH)) return [];
-  let learning;
-  try { learning = JSON.parse(fs.readFileSync(LEARNING_PATH, 'utf8')); } catch { return []; }
+// The caller passes the LIVE childLearning.learning store and its save fn.
+// Reading/writing child_learning.json directly was a double no-op: the file is
+// nested under a `learning` key (so learning[spec] always missed), and the
+// in-memory singleton — the only thing the live child signal reads — both
+// ignored the file and clobbered it on the next _save(). Mutating the singleton
+// in place is the only thing that actually changes child behavior.
+export function applyDirectedMutations(hints = directedHints(), learning = null, save = null) {
+  if (!learning) return [];
   const applied = [];
 
   // net direction per child (several hints may agree or cancel)
@@ -195,7 +198,7 @@ export function applyDirectedMutations(hints = directedHints()) {
   for (const [spec, { dir, reasons }] of Object.entries(net)) {
     if (Math.abs(dir) < 0.1) continue;
     const child = learning[spec] || learning[spec.toLowerCase()];
-    if (!child) continue;
+    if (!child) continue; // gauss-* / unknown specs have no child entry — skip
     child.dna = child.dna || {};
     const cur = child.dna.minConfidence ?? 55;
     const delta = Math.max(-STEP, Math.min(STEP, dir * STEP)) * cur;
@@ -207,9 +210,7 @@ export function applyDirectedMutations(hints = directedHints()) {
     console.log(`[LEARNING] 🧬 ${spec}: minConfidence ${cur} → ${next} | ${reasons[0]}`);
   }
 
-  if (applied.length) {
-    try { fs.writeFileSync(LEARNING_PATH, JSON.stringify(learning, null, 2)); } catch { }
-  }
+  if (applied.length && typeof save === 'function') { try { save(); } catch { } }
   return applied;
 }
 

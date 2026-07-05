@@ -276,7 +276,7 @@ function normalizePolymarket(raw, prices = {}) {
   } catch { }
   // CTF conditionId — required by Brier's ResolutionWatcher to settle paper bets
   const conditionId = raw.conditionId || raw.condition_id || null;
-  return { id, title, yesPrice, bestBid, bestAsk, spread, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds, conditionId };
+  return { id, title, yesPrice, bestBid, bestAsk, spread, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds, conditionId, _quoteAt: Date.now() };
 }
 
 // ── Check market resolution via Polymarket API (for long-horizon non-crypto) ──

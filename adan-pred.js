@@ -1806,7 +1806,7 @@ async function dreamMode(pnl) {
   try {
     const { text } = nightlyReport();
     ledgerDigest = text;
-    const mutations = applyDirectedMutations();
+    const mutations = applyDirectedMutations(undefined, childLearning.learning, () => childLearning._save());
     if (mutations.length) console.log(`[DREAM] 🧬 ${mutations.length} directed mutation(s) applied from ledger evidence`);
   } catch (e) { console.log('[DREAM] ledger analysis error:', e.message); }
 
@@ -2683,12 +2683,19 @@ async function evaluate_and_trade(decision, prices, state) {
   }
 
   // ═══ TILT GUARD (asset cooldown — salvaged from the parked oracle path) ═══
-  // 2 consecutive losses on the same asset → skip one cycle on that asset.
+  // 2 recent consecutive losses on the same asset → cool down briefly.
+  // MUST be time-bounded: a pure "last 2 closed are losses" check is an
+  // absorbing state — with no open positions nothing can resolve to break the
+  // streak, so the asset would be locked out forever (it was: BTC/SOL died for
+  // ~17h). Only veto while the 2nd loss is still fresh (within one cooldown).
   {
     const assetT = (market.asset || '').toLowerCase();
+    const TILT_COOLDOWN_MS = 2 * SCAN_INTERVAL_MS;
     const recentClosed = (loadPositions().closed || []).filter(q => (q.asset || '').toLowerCase() === assetT).slice(-2);
-    if (recentClosed.length >= 2 && recentClosed.every(q => q.result === 'LOSS')) {
-      console.log(`[TILT GUARD] ⏸ 2 consecutive losses on ${assetT.toUpperCase()} — cooling down 1 cycle`);
+    const lastLoss = recentClosed[recentClosed.length - 1];
+    const lastLossFresh = lastLoss?.resolvedAt && (Date.now() - new Date(lastLoss.resolvedAt).getTime()) < TILT_COOLDOWN_MS;
+    if (recentClosed.length >= 2 && recentClosed.every(q => q.result === 'LOSS') && lastLossFresh) {
+      console.log(`[TILT GUARD] ⏸ 2 recent losses on ${assetT.toUpperCase()} — cooling down`);
       recordAdanShadow(decision, market, 'TILT_COOLDOWN');
       return;
     }
@@ -3115,7 +3122,8 @@ async function evaluate_and_trade(decision, prices, state) {
   // v9.0: Scenario Forecaster — "Third Eye" Kelly multiplier
   const forecastMult = scenarioForecaster.getKellyMultiplier();
   const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult * cusumMult * vpinMult * purgedWFMult * forecastMult);
-  let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
+  // Probation flat ticket is exempt from the training floor; otherwise min $100.
+  let stake = ddProbation ? 25 : Math.round(Math.max(100, baseStake * combined) / 25) * 25;
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
   if (decision._childDirect) {
@@ -3128,8 +3136,15 @@ async function evaluate_and_trade(decision, prices, state) {
     // Apply copula correlation penalty (already calculated above)
     const childStakeWithCopula = Math.round(rawChildStake * copulaStakeAdj / 25) * 25;
     stake = Math.min(300, Math.max(50, childStakeWithCopula));
-    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} Half-Kelly: edge=${(edge * 100).toFixed(1)}% f*=${(fullKelly * 100).toFixed(1)}% → $${rawChildStake} × copula(${copulaStakeAdj.toFixed(2)}) = $${stake}`);
+    // Risk controls that MUST bind even on the child/GAUSS override path:
+    // the LLM meta-label size verdict was silently discarded here before.
+    stake = Math.round(stake * metaLabelMult / 25) * 25;
+    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} Half-Kelly: edge=${(edge * 100).toFixed(1)}% f*=${(fullKelly * 100).toFixed(1)}% → $${rawChildStake} × copula(${copulaStakeAdj.toFixed(2)}) × meta(${metaLabelMult.toFixed(2)}) = $${stake}`);
   }
+
+  // Drawdown probation overrides EVERY sizing path (child override included):
+  // a flat healing ticket, or the drawdown it exists to heal never heals.
+  if (ddProbation) { stake = 25; }
 
   // ═══ Concept #8C: UCB Exploration stake cap — max 3% of fund on exploration markets ═══
   if (market._ucb && market._ucb.is_exploration) {
@@ -3622,7 +3637,10 @@ async function checkResolutions() {
           entryVec: p.entryVec, side: p.side, edge: p.edge,
           confidence: p.confidence, entryTime: p.entryTime,
         }).probability;
-        const llmProb = p.myProb || 0.5;
+        // ensemble scores against `won` (chosen-side outcome), so it needs
+        // P(chosen side), not P(YES). New positions store pSide explicitly;
+        // legacy positions stored myProb already in the side frame.
+        const llmProb = p.pSide ?? p.myProb ?? 0.5;
         const rulesProb = p.rulesProb || 0.5; // v7: now stored per-trade
         ensemble.updateWeights(statProb, llmProb, rulesProb, won);
 
@@ -3894,7 +3912,7 @@ async function checkResolutions() {
     if (global._dirMutBatch >= 5) {
       global._dirMutBatch = 0;
       try {
-        const muts = applyDirectedMutations();
+        const muts = applyDirectedMutations(undefined, childLearning.learning, () => childLearning._save());
         if (muts.length) console.log(`[LEARNING] 🧬 ${muts.length} directed mutation(s) applied from resolution outcomes`);
       } catch (e) { console.log('[LEARNING] directed mutation error:', e.message); }
     }
@@ -4365,6 +4383,11 @@ async function doScan(state) {
   for (const ct of childDirectTrades.slice(0, maxChildDirect)) {
     const mcCt = loadMetaCalib();
     const calibConf = Math.round((ct.intel.confidence || 0) * (mcCt.multiplier || 1.0));
+    // Clamp to [0.03, 0.97]: the metacalib multiplier caps at 1.3, so a raw
+    // conf of 95 could yield calibConf 114 → pSide 1.14 → pYes -0.14 on a NO
+    // bet, poisoning EV/Kelly/Brier. A probability must stay a probability.
+    const pSideCt = Math.min(0.97, Math.max(0.03, calibConf / 100));
+    const pYesCt = ct.side === 'YES' ? pSideCt : 1 - pSideCt;
     const netEdgeCt = ct.edge - 0.017; // net of fees+slippage
     const decision = {
       action: 'BET',
@@ -4373,10 +4396,9 @@ async function doScan(state) {
       edge_pct: netEdgeCt * 100,
       confidence_pct: calibConf,
       // myProb is P(YES) — downstream (Kelly, EV gate, Brier reporter) flips for NO.
-      // calibConf is confidence in the CHOSEN side, so convert frames here.
-      myProb: ct.side === 'YES' ? calibConf / 100 : 1 - calibConf / 100,
-      pSide: calibConf / 100,
-      pYes: ct.side === 'YES' ? calibConf / 100 : 1 - calibConf / 100,
+      myProb: pYesCt,
+      pSide: pSideCt,
+      pYes: pYesCt,
       rawConfidence: ct.intel.confidence || 0,
       edge: netEdgeCt,
       confidence: calibConf,
@@ -4401,6 +4423,11 @@ async function doScan(state) {
     for (const m of tradeableMarkets) {
       if (childTradedMarkets.has(m.id || m.conditionId)) continue;
       if (!Number.isFinite(m.bestBid) || !Number.isFinite(m.bestAsk)) continue;
+      // Staleness guard: the Gamma quote was snapshotted at cycle start; child
+      // trades + LLM races can put it 30-90s behind the live book. On 5-15min
+      // windows that drift IS the phantom "edge" — sorting by netEdge would
+      // otherwise select exactly the stalest quotes. Skip if too old.
+      if (Date.now() - (m._quoteAt || 0) > 25000) continue;
       const g = await priceWindow(m);
       if (!g) continue;
       const side = g.pUp >= 0.5 ? 'YES' : 'NO';
@@ -4826,13 +4853,15 @@ async function main() {
             const netFastEdge = mispricingFast - 0.017; // fees
             const _optFast = selfOptimizer.loadParams();
             if (childIntel && calibFastConf >= _optFast.confGate && netFastEdge > _optFast.minEdge) {
+              const pSideFast = Math.min(0.97, Math.max(0.03, calibFastConf / 100));
+              const pYesFast = childIntel.direction === 'UP' ? pSideFast : 1 - pSideFast;
               const fastDecision = {
                 action: 'BET', market: nm,
                 side: childIntel.direction === 'UP' ? 'YES' : 'NO',
-                // myProb is P(YES); calibFastConf is side-frame confidence → convert.
-                myProb: childIntel.direction === 'UP' ? calibFastConf / 100 : 1 - calibFastConf / 100,
-                pSide: calibFastConf / 100,
-                pYes: childIntel.direction === 'UP' ? calibFastConf / 100 : 1 - calibFastConf / 100,
+                // myProb is P(YES); calibFastConf is side-frame confidence, clamped.
+                myProb: pYesFast,
+                pSide: pSideFast,
+                pYes: pYesFast,
                 rawConfidence: childIntel?.confidence || 0,
                 edge: netFastEdge,
                 edge_pct: netFastEdge * 100,

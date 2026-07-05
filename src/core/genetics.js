@@ -281,7 +281,12 @@ function pruneDeadChildren(pnl) {
     // accumulated evidence). Refill comes out of the treasury.
     if (fund <= 0 && (cp.trades || 0) >= 5) {
       const treasury = pnl.treasury || 0;
-      if (realWilson !== null && realWilson >= 0.40 && treasury >= 50) {
+      // Hard cap on bailouts per child: the treasury field is reset to 500 on
+      // every resolution elsewhere, so the `treasury >= 50` gate alone would
+      // grant infinite refills. A child that keeps going bankrupt despite
+      // Wilson skill is not actually converting edge to money — let it die.
+      const MAX_BAILOUTS = 3;
+      if (realWilson !== null && realWilson >= 0.40 && treasury >= 50 && (cp.bailouts || 0) < MAX_BAILOUTS) {
         const refill = Math.min(250, treasury);
         pnl.treasury = treasury - refill;
         cp.fund = refill;

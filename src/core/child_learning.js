@@ -141,6 +141,11 @@ class ChildLearningEngine {
     async checkResolutions(prices, checkMarketResolutionFn = null) {
         const now = Date.now();
         let resolved = 0;
+        const priceCache = new Map();      // (sym:closeTime) -> price | null, one fetch per market-minute
+        let quantFetches = 0;
+        const MAX_QUANT_FETCHES = 40;      // bound blocking HTTP per cycle
+        const STALE_MS = 6 * 3600 * 1000;  // abandon unresolved shadows older than 6h
+        let dirty = false;                 // any terminal eviction that must persist
 
         for (const s of this.shadows) {
             if (s.resolved) continue;
@@ -174,23 +179,35 @@ class ChildLearningEngine {
             const closeTime = new Date(s.marketCloseTime).getTime();
             if (closeTime > now) continue; // Not closed yet
 
+            // Abandon stale unresolved shadows: without this, dead-zone or
+            // fetch-failing shadows accumulate and each does an awaited HTTP
+            // call every cycle, strangling the main loop (measured: 800+ stuck).
+            if (now - closeTime > STALE_MS) { s.resolved = true; s.correct = null; s.stale = true; dirty = true; continue; }
+
             try {
                 const sym = this._assetToSymbol(s.asset);
-                if (!s.entryPrice || s.entryPrice <= 0) continue; // No valid entryPrice — skip
+                if (!s.entryPrice || s.entryPrice <= 0) { s.resolved = true; s.correct = null; dirty = true; continue; }
 
-                // Grade at WINDOW CLOSE, not at whatever moment this loop runs.
-                // Grading against the current price added resolution-timing noise
-                // to the exact metric that decides which child is "elite".
-                const closePrice = await this._priceAtTime(sym, closeTime);
-                const currentPrice = closePrice ?? prices?.[sym]?.price; // fail-soft fallback
-                if (!currentPrice) continue;
+                // Grade at WINDOW CLOSE via the fixed close-price bar. One fetch
+                // per (sym, minute) per cycle, capped, so the backlog drains
+                // without blocking the loop.
+                const cacheKey = `${sym}:${closeTime}`;
+                let closePrice = priceCache.get(cacheKey);
+                if (closePrice === undefined) {
+                    if (quantFetches >= MAX_QUANT_FETCHES) continue; // rest next cycle
+                    quantFetches++;
+                    closePrice = (await this._priceAtTime(sym, closeTime)) ?? null;
+                    priceCache.set(cacheKey, closePrice);
+                }
+                if (closePrice == null) continue; // bar not ready — retry next cycle (bounded by STALE_MS)
 
-                const pctChange = (currentPrice - s.entryPrice) / s.entryPrice;
+                const pctChange = (closePrice - s.entryPrice) / s.entryPrice;
                 const actualDirection = pctChange > 0.001 ? 'UP' : pctChange < -0.001 ? 'DOWN' : 'NEUTRAL';
 
-                // Dead zone: price moved <0.1% — treat as no-contest, skip resolution
-                // Children never predict NEUTRAL, so counting it as wrong is unfair
-                if (actualDirection === 'NEUTRAL') continue;
+                // Dead zone: |move| < 0.1% at the fixed close. Deterministic now,
+                // so it will NEVER change — resolve terminally as a no-contest
+                // (evicted, not counted in accuracy) instead of leaking forever.
+                if (actualDirection === 'NEUTRAL') { s.resolved = true; s.correct = null; s.push = true; dirty = true; continue; }
 
                 const correct = (s.direction === actualDirection);
 
@@ -218,6 +235,8 @@ class ChildLearningEngine {
                 this.lastEvolution = this.globalResolved;
                 this._save();
             }
+        } else if (dirty) {
+            this._save(); // persist terminal evictions so they don't re-fetch next cycle
         }
 
         // Cleanup old resolved shadows (keep last 1000)
@@ -737,16 +756,22 @@ class ChildLearningEngine {
         return map[asset?.toLowerCase()] || asset;
     }
 
-    // Binance 1m close at (or just before) tsMs — the honest grading price for
-    // a window that closed at tsMs. Returns null on any failure (caller falls
-    // back to current price rather than skipping resolution forever).
+    // Price AT window close tsMs = CLOSE of the 1m bar that OPENS at tsMs-60000
+    // (Binance filters klines by open time). Taking the last bar in a window
+    // ending at tsMs grabbed the bar OPENING at tsMs — the price one minute
+    // late, or a still-forming bar (= live price, the noise this was meant to
+    // remove). Returns null if that bar isn't complete yet, so the caller
+    // retries next cycle instead of grading against garbage.
     async _priceAtTime(sym, tsMs) {
         try {
-            const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1m&startTime=${tsMs - 120000}&endTime=${tsMs}&limit=3`;
+            const openMs = tsMs - 60000; // the bar that CLOSES exactly at tsMs
+            if (openMs + 60000 > Date.now()) return null; // bar still forming
+            const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1m&startTime=${openMs}&endTime=${tsMs - 1}&limit=1`;
             const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
             if (!res.ok) return null;
             const k = await res.json();
-            if (Array.isArray(k) && k.length) return parseFloat(k[k.length - 1][4]);
+            const bar = Array.isArray(k) ? k.find(b => b[0] === openMs) : null;
+            if (bar) return parseFloat(bar[4]);
         } catch { }
         return null;
     }

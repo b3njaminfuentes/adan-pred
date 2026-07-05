@@ -14,7 +14,7 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 73.74,
+        "influence": 89.82,
         "usurpedBy": "AT1",
         "usurpedAt": "2026-03-16T17:01:56.562Z",
         "dna": {
@@ -40,23 +40,22 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 39.67,
+        "influence": 47.59,
         "usurpedBy": "S1",
-        "usurpedAt": "2026-03-16T03:24:10.897Z",
+        "usurpedAt": "2026-07-05T17:34:12.939Z",
         "dna": {
-          "minEdge": 0.043,
-          "volWeight": 0.7671,
-          "vwapWeight": 1.7592,
-          "boredBBMin": 0.0024,
-          "stakePct": 0.0938,
-          "patience": 0.524,
-          "cognitiveStyle": "volume_vwap",
-          "mutation": 77,
-          "generation": 77,
-          "rebornFrom": "BNB-1hr",
+          "minEdge": 0.0667,
+          "volWeight": 0.7318,
+          "vwapWeight": 0.9066,
+          "boredBBMin": 0.0072,
+          "stakePct": 0.2075,
+          "patience": 1.2109,
+          "cognitiveStyle": "rsi_reversal",
+          "mutation": 1,
+          "generation": 7,
           "crossoverFrom": [
-            "SOL-15min",
-            "ETH-5min"
+            "ETH-15min",
+            "BTC-1hr"
           ]
         }
       },
@@ -66,7 +65,7 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 46.18
+        "influence": 89.82
       }
     ],
     "competition": {
