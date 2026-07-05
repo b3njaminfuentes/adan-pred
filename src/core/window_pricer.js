@@ -24,6 +24,21 @@ function phi(z) {
   return z > 0 ? 1 - p : p;
 }
 
+// Fresh spot price. The in-memory priceData snapshot can be 20-60s old by the
+// time GAUSS runs (child trades + LLM races sit between the fetch and us);
+// pricing a 5-min window with a stale price systematically inflates |z| on
+// busy cycles while the fill executes at the fresh book: adverse selection.
+async function spotPrice(sym) {
+  try {
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const p = parseFloat(j.price);
+    return Number.isFinite(p) && p > 0 ? p : null;
+  } catch { }
+  return null;
+}
+
 // Binance 1m open at exactly tsMs (Polymarket windows align to clock minutes).
 // Returns null on any failure — the caller must skip, never guess.
 async function binanceOpenAt(sym, tsMs) {
@@ -62,6 +77,12 @@ export async function priceWindow(market) {
   const startPrice = await binanceOpenAt(sym, startMs);
   if (!startPrice || startPrice <= 0) return null;
 
+  // Fresh spot + clock measured in the same instant, AFTER all awaits.
+  const livePrice = (await spotPrice(sym)) ?? pd.price;
+  const nowFresh = Date.now();
+  const remainFresh = (endMs - nowFresh) / 60000;
+  if (!(remainFresh > 0.4)) return null; // window nearly over after fetch latency
+
   // Realized per-minute vol from in-memory 1m closes (last ~30 bars).
   const rets = [];
   const tail = closes.slice(-31);
@@ -74,9 +95,9 @@ export async function priceWindow(market) {
   const sigma = Math.sqrt(rets.reduce((a, b) => a + (b - mean) * (b - mean), 0) / rets.length);
   if (!(sigma > 1e-6)) return null; // dead tape: no vol estimate, no opinion
 
-  const delta = Math.log(pd.price / startPrice);
-  const z = delta / (sigma * Math.sqrt(Math.max(remainMin, 0.25)));
+  const delta = Math.log(livePrice / startPrice);
+  const z = delta / (sigma * Math.sqrt(Math.max(remainFresh, 0.25)));
   const pUp = Math.min(0.97, Math.max(0.03, phi(z))); // clamp: model humility
 
-  return { pUp, z, delta, sigma, remainMin, startPrice };
+  return { pUp, z, delta, sigma, remainMin: remainFresh, startPrice, livePrice };
 }

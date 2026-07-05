@@ -3267,10 +3267,22 @@ async function evaluate_and_trade(decision, prices, state) {
   console.log(`[FILL] 💵 ${side} @ ${(fillPrice * 100).toFixed(1)}% (bid ${(quote.bestBid * 100).toFixed(1)} / ask ${(quote.bestAsk * 100).toFixed(1)}, spread ${((quote.bestAsk - quote.bestBid) * 100).toFixed(1)}%)`);
 
   const pos = loadPositions();
+  // Atomic dedup recheck: the guard at function entry ran BEFORE up to ~10s of
+  // awaits (whale fetch, meta-label race); the fast loop can interleave there.
+  // No awaits between this read and savePositions, so this check is race-free.
+  {
+    const mKeyFill = market.id || market.conditionId;
+    if ((pos.open || []).some(q => (q.marketId || q.conditionId) === mKeyFill)) {
+      console.log('[DEDUP] ⏭ Position appeared during evaluation — aborting duplicate fill');
+      recordAdanShadow(decision, market, 'DUPLICATE_RACE');
+      return;
+    }
+  }
   pos.open.push({
     id: Date.now().toString(),
     marketId: market.id,
     conditionId: market.conditionId || null,
+    childSpec: decision?._childSpec || null,
     marketTitle: market.title,
     asset: market.asset || 'other',
     side, myProb,
@@ -3574,7 +3586,11 @@ async function checkResolutions() {
     console.log('[DEBUG-TRACE] resolveHypothesis OK');
     // Feed RAW (pre-metacalib) confidence: bucketing the already-calibrated
     // value made the multiplier compound on itself every generation.
-    updateMetaCalib(p.rawConfidence ?? p.confidence ?? 65, won);
+    // GAUSS excluded: its pSide is a model probability on a different scale;
+    // mixing it in degrades the multiplier that scales CHILD confidences
+    // (GAUSS calibration is tracked per-spec in the trades.jsonl ledger).
+    const isGaussPos = (p.childSpec || '').startsWith('gauss') || (p.entryThought || '').startsWith('[GAUSS]');
+    if (!isGaussPos) updateMetaCalib(p.rawConfidence ?? p.confidence ?? 65, won);
     console.log('[DEBUG-TRACE] updateMetaCalib OK');
     promoteInsightsToSoul();
     console.log('[DEBUG-TRACE] promoteInsightsToSoul OK');
