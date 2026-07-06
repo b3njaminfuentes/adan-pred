@@ -67,40 +67,38 @@ async function callModel(modelName, prompt, options = {}, label = '') {
 }
 
 // ── PRIMARY: Distributed call across available fleet ──
-// Priority: Workhorse (3.1 Flash Lite, 500 RPD) → Gemma 12B → Lite 2.5 → Flash 3 → Gemma 27B
-// NOTE: Gemini 2.0 Flash has quota=0 on free tier, only used as last-resort retry
+// Priority: Gemma 4 31B (Unlimited TPM, 1.5K RPD) → Gemma 4 26B → Workhorse (3.1 Flash Lite) → Flash3 → Lite → Flash3.5
 async function callDistributed(prompt, options = {}) {
     _callCounter++;
 
-    // Route #1: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM)
-    // This is the PRIMARY brain now
+    // Route #1: Gemma 4 31B (1.5K RPD, 15 RPM, Unlimited TPM) — THE HEAVY BRAIN
+    if (quota.canUseGemma()) {
+        const r1 = await callModel(MODELS.GEMMA_31B, prompt, options, '🧠 Gemma4-31B');
+        if (r1) { quota.consumeGemma(); return r1; }
+    }
+
+    // Route #2: Gemma 4 26B (1.5K RPD, 15 RPM, Unlimited TPM) — SECONDARY BRAIN
+    if (quota.canUseGemma()) {
+        const r2 = await callModel(MODELS.GEMMA_26B, prompt, options, '🧒 Gemma4-26B');
+        if (r2) { quota.consumeGemma(); return r2; }
+    }
+
+    // Route #3: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM) — FAST FALLBACK
     if (quota.canUseWorkhorse()) {
         const result = await callModel(MODELS.WORKHORSE, prompt, options, '🐎 Workhorse-3.1');
         if (result) { quota.consumeWorkhorse(); return result; }
     }
 
-    // Route #2: Gemma 4 26B (1.5K RPD, 15 RPM, Unlimited TPM)
-    if (quota.canUseGemma()) {
-        const r2 = await callModel(MODELS.GEMMA_26B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧒 Gemma4-26B');
-        if (r2) { quota.consumeGemma(); return r2; }
-    }
-
-    // Route #3: Gemini 2.5 Flash Lite (20 RPD, 250K TPM)
-    if (quota.canUseLite()) {
-        const r3 = await callModel(MODELS.LITE, prompt, options, '💡 Lite-2.5');
-        if (r3) { quota.consumeLite(); return r3; }
-    }
-
-    // Route #4: Gemini 3 Flash Preview (20 RPD, 250K TPM)
+    // Route #4: Gemini 3 Flash (20 RPD, 250K TPM)
     if (quota.canUseFlash3()) {
         const r4 = await callModel(MODELS.FLASH3, prompt, options, '🔥 Flash-3');
         if (r4) { quota.consumeFlash3(); return r4; }
     }
 
-    // Route #5: Gemma 4 31B (Unlimited TPM — heavy, last resort before full exhaust)
-    if (quota.canUseGemma()) {
-        const r5 = await callModel(MODELS.GEMMA_31B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧠 Gemma4-31B');
-        if (r5) { quota.consumeGemma(); return r5; }
+    // Route #5: Gemini 2.5 Flash Lite (20 RPD, 250K TPM)
+    if (quota.canUseLite()) {
+        const r5 = await callModel(MODELS.LITE, prompt, options, '💡 Lite-2.5');
+        if (r5) { quota.consumeLite(); return r5; }
     }
 
     // Route #6: Gemini 3.5 Flash — last resort
@@ -111,9 +109,8 @@ async function callDistributed(prompt, options = {}) {
     return null;
 }
 
-// ── callGemma: Now redirects to distributed fleet (Gemma is RESERVE, not primary) ──
+// ── callGemma: Directly calls distributed now that Gemma is primary ──
 async function callGemma(prompt, options = {}) {
-    // Gemma 15K TPM is too small for primary use — redirect to Flash fleet
     return callDistributed(prompt, options);
 }
 
@@ -185,8 +182,9 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
             case 'UltraLight':
                 return await withTimeout(callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 }));
             case 'Child':
+                // For children, try the faster/lighter Gemma 4 26B first
                 if (quota.canUseGemma()) {
-                    const r = await withTimeout(callModel(MODELS.GEMMA_26B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma4-26B'));
+                    const r = await withTimeout(callModel(MODELS.GEMMA_26B, finalPrompt, { temperature: 0.05 }, '🧒 Gemma4-26B'));
                     if (r) { quota.consumeGemma(); return r; }
                 }
                 return await withTimeout(callDistributed(finalPrompt, { temperature: 0.05 }));
