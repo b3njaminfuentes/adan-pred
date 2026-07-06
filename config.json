@@ -14,7 +14,7 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 89.82,
+        "influence": 87.32,
         "usurpedBy": "AT1",
         "usurpedAt": "2026-03-16T17:01:56.562Z",
         "dna": {
@@ -40,22 +40,22 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 47.59,
+        "influence": 53.67,
         "usurpedBy": "S1",
-        "usurpedAt": "2026-07-05T17:34:12.939Z",
+        "usurpedAt": "2026-07-06T12:49:44.168Z",
         "dna": {
-          "minEdge": 0.0667,
-          "volWeight": 0.7318,
-          "vwapWeight": 0.9066,
-          "boredBBMin": 0.0072,
-          "stakePct": 0.2075,
-          "patience": 1.2109,
+          "minEdge": 0.0429,
+          "volWeight": 1.0052,
+          "vwapWeight": 1.0658,
+          "boredBBMin": 0.0074,
+          "stakePct": 0.1235,
+          "patience": 1.2121,
           "cognitiveStyle": "rsi_reversal",
-          "mutation": 1,
-          "generation": 7,
+          "mutation": 2,
+          "generation": 2,
           "crossoverFrom": [
-            "ETH-15min",
-            "BTC-1hr"
+            "XRP-5min",
+            "XRP-15min"
           ]
         }
       },
@@ -65,7 +65,7 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 89.82
+        "influence": 87.32
       }
     ],
     "competition": {

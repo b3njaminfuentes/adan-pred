@@ -13,18 +13,17 @@ function getGenAI() {
 
 const MODELS = {
     // === PRIMARY FLEET (250K TPM each) ===
-    WORKHORSE: 'gemini-3.1-flash-lite-preview',  // 15 RPM, 250K TPM, 500 RPD — NEW BRAIN
-    FAST: 'gemini-2.0-flash',                     // unlimited RPM, 250K TPM — FALLBACK #1
+    WORKHORSE: 'gemini-3.1-flash-lite',           // 15 RPM, 250K TPM, 500 RPD — PRIMARY BRAIN
+    FAST: 'gemini-3.5-flash',                     // 5 RPM, 250K TPM, 20 RPD — FALLBACK #1 (replaces dead 2.0-flash)
     SNIPER: 'gemini-2.5-flash',                   // 5 RPM, 250K TPM, 20 RPD — CRITICAL ONLY
     LITE: 'gemini-2.5-flash-lite',                // 10 RPM, 250K TPM, 20 RPD — OVERFLOW
-    FLASH3: 'gemini-3-flash-preview',             // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
-    FLASH_LITE: 'gemini-2.0-flash-lite',          // unlimited RPM, fallback
-    // === RESERVE FLEET (15K TPM each — use sparingly) ===
-    GEMMA_27B: 'gemma-3-27b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
-    GEMMA_12B: 'gemma-3-12b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
+    FLASH3: 'gemini-3-flash',                     // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
+    // === RESERVE FLEET (Gemma 4 — Unlimited TPM, 1.5K RPD each) ===
+    GEMMA_31B: 'gemma-4-31b',                     // 15 RPM, Unlimited TPM, 1.5K RPD
+    GEMMA_26B: 'gemma-4-26b',                     // 15 RPM, Unlimited TPM, 1.5K RPD
     // === EMBEDDINGS ===
-    EMBEDDER: 'gemini-embedding-exp-03-07',       // Gemini Embedding 2 — 100 RPM, 30K TPM
-    EMBEDDER_LEGACY: 'text-embedding-004',
+    EMBEDDER: 'gemini-embedding-002',             // 100 RPM, 30K TPM, 1K RPD
+    EMBEDDER_LEGACY: 'gemini-embedding-001',
 };
 
 // Round-robin counter for load distribution
@@ -80,9 +79,9 @@ async function callDistributed(prompt, options = {}) {
         if (result) { quota.consumeWorkhorse(); return result; }
     }
 
-    // Route #2: Gemma 12B (14.4K RPD, 30 RPM, 15K TPM) — lighter, saves 27B
+    // Route #2: Gemma 4 26B (1.5K RPD, 15 RPM, Unlimited TPM)
     if (quota.canUseGemma()) {
-        const r2 = await callModel(MODELS.GEMMA_12B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧒 Gemma-12B');
+        const r2 = await callModel(MODELS.GEMMA_26B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧒 Gemma4-26B');
         if (r2) { quota.consumeGemma(); return r2; }
     }
 
@@ -98,14 +97,14 @@ async function callDistributed(prompt, options = {}) {
         if (r4) { quota.consumeFlash3(); return r4; }
     }
 
-    // Route #5: Gemma 27B (15K TPM — heavy, last resort before full exhaust)
+    // Route #5: Gemma 4 31B (Unlimited TPM — heavy, last resort before full exhaust)
     if (quota.canUseGemma()) {
-        const r5 = await callModel(MODELS.GEMMA_27B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧠 Gemma-27B');
+        const r5 = await callModel(MODELS.GEMMA_31B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧠 Gemma4-31B');
         if (r5) { quota.consumeGemma(); return r5; }
     }
 
-    // Route #6: Gemini 2.0 Flash — may have quota=0 but try anyway as absolute last resort
-    const r6 = await callModel(MODELS.FAST, prompt, options, '⚡ Flash-2.0-lastresort');
+    // Route #6: Gemini 3.5 Flash — last resort
+    const r6 = await callModel(MODELS.FAST, prompt, options, '⚡ Flash-3.5-lastresort');
     if (r6) return r6;
 
     console.error('[ROUTER] ALL MODELS EXHAUSTED — no response possible');
@@ -187,7 +186,7 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
                 return await withTimeout(callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 }));
             case 'Child':
                 if (quota.canUseGemma()) {
-                    const r = await withTimeout(callModel(MODELS.GEMMA_12B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma-12B'));
+                    const r = await withTimeout(callModel(MODELS.GEMMA_26B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma4-26B'));
                     if (r) { quota.consumeGemma(); return r; }
                 }
                 return await withTimeout(callDistributed(finalPrompt, { temperature: 0.05 }));
