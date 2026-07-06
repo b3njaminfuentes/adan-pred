@@ -71,25 +71,13 @@ async function callModel(modelName, prompt, options = {}, label = '') {
 async function callDistributed(prompt, options = {}) {
     _callCounter++;
 
-    // Route #1: Gemma 4 31B (1.5K RPD, 15 RPM, Unlimited TPM) — THE HEAVY BRAIN
-    if (quota.canUseGemma()) {
-        const r1 = await callModel(MODELS.GEMMA_31B, prompt, options, '🧠 Gemma4-31B');
-        if (r1) { quota.consumeGemma(); return r1; }
-    }
-
-    // Route #2: Gemma 4 26B (1.5K RPD, 15 RPM, Unlimited TPM) — SECONDARY BRAIN
-    if (quota.canUseGemma()) {
-        const r2 = await callModel(MODELS.GEMMA_26B, prompt, options, '🧒 Gemma4-26B');
-        if (r2) { quota.consumeGemma(); return r2; }
-    }
-
-    // Route #3: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM) — FAST FALLBACK
+    // Route #1: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM) — THE HEAVY BRAIN
     if (quota.canUseWorkhorse()) {
         const result = await callModel(MODELS.WORKHORSE, prompt, options, '🐎 Workhorse-3.1');
         if (result) { quota.consumeWorkhorse(); return result; }
     }
 
-    // Route #4: Gemini 3 Flash (20 RPD, 250K TPM)
+    // Route #2: Gemini 3 Flash (20 RPD, 250K TPM)
     if (quota.canUseFlash3()) {
         const r4 = await callModel(MODELS.FLASH3, prompt, options, '🔥 Flash-3');
         if (r4) { quota.consumeFlash3(); return r4; }
@@ -182,11 +170,6 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
             case 'UltraLight':
                 return await withTimeout(callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 }));
             case 'Child':
-                // For children, try the faster/lighter Gemma 4 26B first
-                if (quota.canUseGemma()) {
-                    const r = await withTimeout(callModel(MODELS.GEMMA_26B, finalPrompt, { temperature: 0.05 }, '🧒 Gemma4-26B'));
-                    if (r) { quota.consumeGemma(); return r; }
-                }
                 return await withTimeout(callDistributed(finalPrompt, { temperature: 0.05 }));
             default:
                 return await withTimeout(callDistributed(finalPrompt));
