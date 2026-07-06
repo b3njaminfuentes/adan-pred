@@ -13,18 +13,17 @@ function getGenAI() {
 
 const MODELS = {
     // === PRIMARY FLEET (250K TPM each) ===
-    WORKHORSE: 'gemini-3.1-flash-lite-preview',  // 15 RPM, 250K TPM, 500 RPD — NEW BRAIN
-    FAST: 'gemini-2.0-flash',                     // unlimited RPM, 250K TPM — FALLBACK #1
+    WORKHORSE: 'gemini-3.1-flash-lite',           // 15 RPM, 250K TPM, 500 RPD — PRIMARY BRAIN
+    FAST: 'gemini-3.5-flash',                     // 5 RPM, 250K TPM, 20 RPD — FALLBACK #1 (replaces dead 2.0-flash)
     SNIPER: 'gemini-2.5-flash',                   // 5 RPM, 250K TPM, 20 RPD — CRITICAL ONLY
     LITE: 'gemini-2.5-flash-lite',                // 10 RPM, 250K TPM, 20 RPD — OVERFLOW
-    FLASH3: 'gemini-3-flash-preview',             // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
-    FLASH_LITE: 'gemini-2.0-flash-lite',          // unlimited RPM, fallback
-    // === RESERVE FLEET (15K TPM each — use sparingly) ===
-    GEMMA_27B: 'gemma-3-27b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
-    GEMMA_12B: 'gemma-3-12b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
+    FLASH3: 'gemini-3-flash',                     // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
+    // === RESERVE FLEET (Gemma 4 — Unlimited TPM, 1.5K RPD each) ===
+    GEMMA_31B: 'gemma-4-31b',                     // 15 RPM, Unlimited TPM, 1.5K RPD
+    GEMMA_26B: 'gemma-4-26b',                     // 15 RPM, Unlimited TPM, 1.5K RPD
     // === EMBEDDINGS ===
-    EMBEDDER: 'gemini-embedding-exp-03-07',       // Gemini Embedding 2 — 100 RPM, 30K TPM
-    EMBEDDER_LEGACY: 'text-embedding-004',
+    EMBEDDER: 'gemini-embedding-002',             // 100 RPM, 30K TPM, 1K RPD
+    EMBEDDER_LEGACY: 'gemini-embedding-001',
 };
 
 // Round-robin counter for load distribution
@@ -68,53 +67,38 @@ async function callModel(modelName, prompt, options = {}, label = '') {
 }
 
 // ── PRIMARY: Distributed call across available fleet ──
-// Priority: Workhorse (3.1 Flash Lite, 500 RPD) → Gemma 12B → Lite 2.5 → Flash 3 → Gemma 27B
-// NOTE: Gemini 2.0 Flash has quota=0 on free tier, only used as last-resort retry
+// Priority: Gemma 4 31B (Unlimited TPM, 1.5K RPD) → Gemma 4 26B → Workhorse (3.1 Flash Lite) → Flash3 → Lite → Flash3.5
 async function callDistributed(prompt, options = {}) {
     _callCounter++;
 
-    // Route #1: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM)
-    // This is the PRIMARY brain now
+    // Route #1: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM) — THE HEAVY BRAIN
     if (quota.canUseWorkhorse()) {
         const result = await callModel(MODELS.WORKHORSE, prompt, options, '🐎 Workhorse-3.1');
         if (result) { quota.consumeWorkhorse(); return result; }
     }
 
-    // Route #2: Gemma 12B (14.4K RPD, 30 RPM, 15K TPM) — lighter, saves 27B
-    if (quota.canUseGemma()) {
-        const r2 = await callModel(MODELS.GEMMA_12B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧒 Gemma-12B');
-        if (r2) { quota.consumeGemma(); return r2; }
-    }
-
-    // Route #3: Gemini 2.5 Flash Lite (20 RPD, 250K TPM)
-    if (quota.canUseLite()) {
-        const r3 = await callModel(MODELS.LITE, prompt, options, '💡 Lite-2.5');
-        if (r3) { quota.consumeLite(); return r3; }
-    }
-
-    // Route #4: Gemini 3 Flash Preview (20 RPD, 250K TPM)
+    // Route #2: Gemini 3 Flash (20 RPD, 250K TPM)
     if (quota.canUseFlash3()) {
         const r4 = await callModel(MODELS.FLASH3, prompt, options, '🔥 Flash-3');
         if (r4) { quota.consumeFlash3(); return r4; }
     }
 
-    // Route #5: Gemma 27B (15K TPM — heavy, last resort before full exhaust)
-    if (quota.canUseGemma()) {
-        const r5 = await callModel(MODELS.GEMMA_27B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧠 Gemma-27B');
-        if (r5) { quota.consumeGemma(); return r5; }
+    // Route #5: Gemini 2.5 Flash Lite (20 RPD, 250K TPM)
+    if (quota.canUseLite()) {
+        const r5 = await callModel(MODELS.LITE, prompt, options, '💡 Lite-2.5');
+        if (r5) { quota.consumeLite(); return r5; }
     }
 
-    // Route #6: Gemini 2.0 Flash — may have quota=0 but try anyway as absolute last resort
-    const r6 = await callModel(MODELS.FAST, prompt, options, '⚡ Flash-2.0-lastresort');
+    // Route #6: Gemini 3.5 Flash — last resort
+    const r6 = await callModel(MODELS.FAST, prompt, options, '⚡ Flash-3.5-lastresort');
     if (r6) return r6;
 
     console.error('[ROUTER] ALL MODELS EXHAUSTED — no response possible');
     return null;
 }
 
-// ── callGemma: Now redirects to distributed fleet (Gemma is RESERVE, not primary) ──
+// ── callGemma: Directly calls distributed now that Gemma is primary ──
 async function callGemma(prompt, options = {}) {
-    // Gemma 15K TPM is too small for primary use — redirect to Flash fleet
     return callDistributed(prompt, options);
 }
 
@@ -186,10 +170,6 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
             case 'UltraLight':
                 return await withTimeout(callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 }));
             case 'Child':
-                if (quota.canUseGemma()) {
-                    const r = await withTimeout(callModel(MODELS.GEMMA_12B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma-12B'));
-                    if (r) { quota.consumeGemma(); return r; }
-                }
                 return await withTimeout(callDistributed(finalPrompt, { temperature: 0.05 }));
             default:
                 return await withTimeout(callDistributed(finalPrompt));

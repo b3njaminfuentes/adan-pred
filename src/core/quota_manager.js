@@ -1,5 +1,5 @@
 // Gestiona los rate limits de Google AI Studio
-// Gemma 27B: 14,400 RPD | Gemini Flash: 20 RPD | Embeddings: 1,000 RPD
+// Gemma 4: 1,500 RPD, 15 RPM | Gemini Flash: 20-500 RPD | Embeddings: 1,000 RPD
 
 import fs from 'fs';
 import path from 'path';
@@ -9,7 +9,7 @@ const QUOTA_FILE = path.join(DIR, 'quota.json');
 
 const DEFAULTS = {
     date: '',
-    gemma: { used: 0, limit: 14400 },
+    gemma: { used: 0, limit: 1480 },
     gemini: { used: 0, limit: 18 },      // Gemini 2.5 Flash: 20 RPD - reservamos 2
     workhorse: { used: 0, limit: 480 },   // Gemini 3.1 Flash Lite: 500 RPD - margen 20
     lite: { used: 0, limit: 18 },         // Gemini 2.5 Flash Lite: 20 RPD - margen 2
@@ -71,7 +71,7 @@ export class QuotaManager {
     // ── GEMMA (Cerebro 24/7) ─────────────────────────────────────────────────
     canUseGemma() {
         this._checkRpmReset();
-        return this.q.gemma.used < this.q.gemma.limit && this.q.rpm.gemma < 28; // 30 RPM, margen 2
+        return this.q.gemma.used < this.q.gemma.limit && this.q.rpm.gemma < 13; // 15 RPM, margen 2
     }
 
     consumeGemma() {
@@ -219,7 +219,7 @@ export class QuotaManager {
             gemini: `${this.q.gemini.used}/${this.q.gemini.limit} RPD ${this.isSaverMode() ? '⚠️ SAVER MODE' : '✅'} (2.5 Flash — SNIPER)`,
             lite: `${lt.used}/${lt.limit} RPD (2.5 Flash Lite — OVERFLOW)`,
             flash3: `${f3.used}/${f3.limit} RPD (3 Flash — OVERFLOW)`,
-            gemma: `${this.q.gemma.used}/${this.q.gemma.limit} RPD (27B — RESERVE ONLY)`,
+            gemma: `${this.q.gemma.used}/${this.q.gemma.limit} RPD (Gemma 4 — RESERVE)`,
             embed: `${this.q.embed.used}/${this.q.embed.limit} RPD`,
             lastDream: this.q.lastDream,
             dreamReady: this.shouldRunDream(),
