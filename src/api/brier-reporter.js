@@ -62,23 +62,34 @@ export function reportTelemetry(activity, constraints) {
   if (constraints) lastConstraints = constraints
 }
 
-// Persistent heartbeat loop. 30s by default: enough for the liveness ticker,
-// without hammering the server 15x more than needed.
-setInterval(() => {
+export function triggerHeartbeat() {
   const url = BASE();
   const slug = process.env.BRIER_BOT_SLUG || '';
-  const apiKey = process.env.BRIER_API_KEY || process.env.BRIER_INGEST_KEY || '';
+  const apiKey = process.env.BRIER_API_KEY || '';
+  const apiSecret = process.env.BRIER_API_SECRET || '';
+  const ingestKey = process.env.BRIER_INGEST_KEY || '';
 
-  if (url && slug && apiKey) {
+  const keyToSend = apiKey.startsWith('bk_live_') ? apiSecret : (apiKey || ingestKey);
+
+  if (url && slug && keyToSend) {
     const payload = JSON.stringify({ activity: lastActivity, constraints: lastConstraints });
     fetch(`${url}/api/bots/${slug}/heartbeat`, {
       method: 'POST',
-      headers: { 'x-brier-key': apiKey, 'Content-Type': 'application/json' },
+      headers: { 'x-brier-key': keyToSend, 'Content-Type': 'application/json' },
       body: payload,
       signal: AbortSignal.timeout(4000),
-    }).catch(() => {});
+    }).then(async res => {
+      if (!res.ok) console.log(`[BRIER] ❌ Heartbeat failed (${res.status}): ${await res.text()}`);
+      else console.log(`[BRIER] ⚡ Heartbeat sent successfully (${res.status}).`);
+    }).catch(e => {
+      console.log(`[BRIER] ❌ Heartbeat fetch error: ${e.message}`);
+    });
   }
-}, HEARTBEAT_MS());
+}
+
+// Persistent heartbeat loop. 30s by default: enough for the liveness ticker,
+// without hammering the server 15x more than needed.
+setInterval(triggerHeartbeat, HEARTBEAT_MS());
 
 export async function refreshMyBrierScore() {
   const url = BASE();
@@ -159,7 +170,7 @@ export class BrierClient {
       probability,
     })
     const timestamp = Date.now().toString()
-    const signature = crypto.createHmac('sha256', this.apiKey).update(`${timestamp}.${payload}`).digest('hex')
+    const signature = crypto.createHmac('sha256', this.apiSecret).update(`${timestamp}.${payload}`).digest('hex')
 
     const res = await fetch(`${this.baseUrl}/api/v1/predictions`, {
       method: 'POST',
@@ -222,7 +233,33 @@ export class BrierClient {
     console.log(`[BRIER] ✓ committed ${args.side} p=${(args.probability * 100).toFixed(1)}% vs mkt=${pMkt != null ? (pMkt * 100).toFixed(1) + '%' : '?'} | ${(args.marketTitle || args.marketId).slice(0, 60)}${data.devFallback ? ' ⚠ DEV midpoint' : ''}`)
     return data
   }
+
+  async ping() {
+    const useV1 = this.botId && this.apiKey.startsWith('bk_live_')
+    if (!useV1) return { success: true, legacy: true };
+    
+    const payload = JSON.stringify({ botId: this.botId });
+    const timestamp = Date.now().toString();
+    const signature = crypto.createHmac('sha256', this.apiSecret).update(`${timestamp}.${payload}`).digest('hex');
+
+    const res = await fetch(`${this.baseUrl}/api/v1/ping`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-timestamp': timestamp,
+        'x-signature': signature,
+      },
+      body: payload,
+      signal: AbortSignal.timeout(5000),
+    });
+    
+    if (!res.ok) {
+      throw new Error(`Ping failed with status ${res.status}`);
+    }
+    return await res.json();
+  }
 }
+
 
 // Called from ADAN's trading loop on every real paper bet.
 // bet: { market, side, probability (P of YES, 0..1), marketYesPrice, ... }
@@ -230,11 +267,25 @@ export async function reportPaperBet(bet) {
   const url = BASE();
   const apiKey = process.env.BRIER_API_KEY;
   const apiSecret = process.env.BRIER_API_SECRET;
-  const botId = process.env.BRIER_BOT_ID || '';
+  const slug = process.env.BRIER_BOT_SLUG || '';
+  let botId = process.env.BRIER_BOT_ID || '';
 
   if (!apiKey) {
     console.error('[BRIER] ❌ missing BRIER_API_KEY. Skipping commit.')
     return
+  }
+
+  // If using v1 keys but no botId is in .env, fetch it from the slug.
+  if (!botId && slug && apiKey.startsWith('bk_live_')) {
+    try {
+      const res = await fetch(`${url}/api/bots/${slug}`);
+      if (res.ok) {
+        const b = await res.json();
+        if (b && b.id) botId = b.id;
+      }
+    } catch (e) {
+      // Silent fail, botId remains empty
+    }
   }
 
   const market = bet.market || {};
@@ -288,3 +339,32 @@ export async function reportPaperBet(bet) {
     // BrierClient already printed the error; never crash the trading loop.
   })
 }
+
+export async function brierPing() {
+  const url = BASE();
+  const apiKey = process.env.BRIER_API_KEY;
+  const apiSecret = process.env.BRIER_API_SECRET;
+  
+  // Try getting botId from env, or extract it from slug lookup if needed,
+  // but wait, the ping payload requires botId.
+  // Wait, BrierClient doesn't actually need botId for /v1/predictions if it uses API key, 
+  // actually yes, /v1/ping requires botId.
+  // The V1 SDK spec needs botId! Where do we get botId?
+  // We can just query /api/bots/[slug] first.
+  const slug = process.env.BRIER_BOT_SLUG;
+  if (!apiKey || !apiSecret || !slug) return;
+  
+  try {
+    const res = await fetch(`${url}/api/bots/${slug}`);
+    if (!res.ok) return;
+    const bot = await res.json();
+    const botId = bot.id;
+    
+    const client = new BrierClient(apiKey, apiSecret, url, botId);
+    await client.ping();
+    console.log(`[BRIER] ⚡ Ping sent successfully for ${slug}.`);
+  } catch (e) {
+    // Silent
+  }
+}
+

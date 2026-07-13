@@ -11,11 +11,11 @@ const PARAMS_PATH = path.join(DIR, 'self_optimized_params.json');
 const OPT_LOG_PATH = path.join(DIR, 'optimization_log.jsonl');
 
 const DEFAULTS = {
-  confGate: 65,
+  confGate: 55,
   minEdge: 0.03,
   hourThr: 0.48,
   hourMinN: 20,
-  childConfGate: 60,
+  childConfGate: 50,
   childMinEdge: 0.02,
   optimizedAt: null,
   version: 0,

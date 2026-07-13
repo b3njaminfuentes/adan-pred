@@ -101,3 +101,17 @@ export async function priceWindow(market) {
 
   return { pUp, z, delta, sigma, remainMin: remainFresh, startPrice, livePrice };
 }
+
+export function calculateEdge(pTheoretical, side, orderBook) {
+    // side is 'YES' or 'NO' in polymarket terms. Let's map 'YES' -> buy, 'NO' -> buy NO (which means sell YES)
+    // Actually the user's snippet uses 'buy' and 'sell', but in Polymarket we always 'buy' YES or 'buy' NO.
+    // If side === 'YES', we buy YES, which costs bestAsk.
+    // If side === 'NO', we buy NO, which costs 1 - bestBid (since bestBid is the highest price someone is willing to pay for YES).
+    // The snippet provided:
+    const executionPrice = side === 'YES' ? orderBook.bestAsk : (1 - orderBook.bestBid);
+    const pSide = side === 'YES' ? pTheoretical : (1 - pTheoretical);
+    
+    // Net edge is your theoretical probability minus the cost to execute
+    const edge = pSide - executionPrice;
+    return edge; // este es el edge REAL, ya neto de spread
+}
