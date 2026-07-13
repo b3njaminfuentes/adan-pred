@@ -14,6 +14,21 @@
 // import Anthropic from '@anthropic-ai/sdk'; // No longer used
 import fs from 'fs';
 import path from 'path';
+
+const LOCK_FILE = 'data/adan.lock';
+if (fs.existsSync(LOCK_FILE)) {
+    const oldPid = fs.readFileSync(LOCK_FILE, 'utf-8');
+    console.error(`[CRITICAL] Ya hay un proceso corriendo (PID ${oldPid}). Matalo antes de levantar uno nuevo.`);
+    process.exit(1);
+}
+fs.writeFileSync(LOCK_FILE, process.pid.toString());
+process.on('exit', () => {
+    if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
+});
+process.on('SIGINT', () => process.exit(0));
+process.on('SIGTERM', () => process.exit(0));
+
+const configPath = './config.json';
 import http from 'http';
 import { quota } from './src/core/quota_manager.js';
 import { soulManager } from './src/core/soul_manager.js';
@@ -59,7 +74,7 @@ import {
 
 import { externalData } from './src/api/external_data.js';
 import { polymarketWS } from './src/api/polymarket_ws.js';
-import { reportPaperBet, reportTelemetry, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty } from './src/api/brier-reporter.js';
+import { reportPaperBet, reportTelemetry, refreshMyBrierScore, getMyBrierScore, brierEdgePenalty, triggerHeartbeat } from './src/api/brier-reporter.js';
 import { ledger as tradeLedger, wilsonLower, nightlyReport, applyDirectedMutations } from './src/core/learning_loop.js';
 import { priceWindow } from './src/core/window_pricer.js';
 
@@ -131,6 +146,29 @@ import { vpinTracker } from './src/ml/vpin.js';
 import { tripleBarrier } from './src/ml/triple_barrier.js';
 import { purgedWF } from './src/ml/purged_walkforward.js';
 import { resolutionOracle } from './src/ml/resolution_oracle.js';
+
+// ── Orphan Check ────────────────────────────────────────────────────────────
+try {
+    const jsonlPath = path.join(DIR, 'data', 'feature_log.jsonl');
+    if (fs.existsSync(jsonlPath)) {
+        const lines = fs.readFileSync(jsonlPath, 'utf-8').trim().split('\n');
+        const entries = new Set();
+        const orphans = new Set();
+        for (const line of lines) {
+            if (!line) continue;
+            try {
+                const row = JSON.parse(line);
+                if (row.type === 'entry') entries.add(row.id);
+                else if (row.type === 'resolution' && !entries.has(row.id)) orphans.add(row.id);
+            } catch (e) {}
+        }
+        if (orphans.size > 0) {
+            const orphanArr = Array.from(orphans);
+            console.warn(`\n[CRITICAL WARNING] Se encontraron ${orphanArr.length} resoluciones huérfanas en feature_log.jsonl.`);
+            console.warn(`Primeros IDs: ${orphanArr.slice(0, 3).join(', ')}\n`);
+        }
+    }
+} catch (e) {}
 
 let consecutiveLosses = 0;
 let lastWinTime = null; // Markovian: timestamp of last winning trade
@@ -3030,16 +3068,20 @@ async function evaluate_and_trade(decision, prices, state) {
   // FAIL-OPEN: null/timeout/parse failure → quant decision proceeds unchanged.
   // (Mapping null to veto would recreate the 100%-blocked oracle path.)
   try {
-    const metaPrompt = [
-      `Signal: ${side} on "${(market.title || '').slice(0, 80)}" (${market.asset}, ${market.windowMin}min window).`,
-      `P(chosen side) ${(decision.pSide != null ? decision.pSide * 100 : confidence).toFixed(0)}%, net edge ${(edge * 100).toFixed(1)}%, EV ${ev.toFixed(3)}.`,
-      `Book: bid ${(quote.bestBid * 100).toFixed(1)} / ask ${(quote.bestAsk * 100).toFixed(1)} (spread ${((quote.bestAsk - quote.bestBid) * 100).toFixed(1)}%), liquidity $${Math.round(market.liquidity || 0)}.`,
-      `Risk state: drawdown ${(markov.current_drawdown_pct * 100).toFixed(1)}%, streak ${pnlNow.streak || 0}, open positions ${markov.positions_open}.`,
-      `Source: ${decision._childSpec || 'fast-path'}.`,
-      `You are the risk arbiter, NOT the forecaster. The side is already chosen by a quant model.`,
-      `Veto ONLY on concrete risk grounds (spread too wide for the edge, EV marginal vs cost, correlated exposure, degraded regime).`,
-      `Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "reason": "<max 15 words>"}`,
-    ].join('\n');
+    const metaPrompt = `
+Signal: ${side} on "${(market.title || '').slice(0, 80)}" (${market.asset}, ${market.windowMin}min window).
+P(chosen side) ${(decision.pSide != null ? decision.pSide * 100 : confidence).toFixed(0)}%, gross edge ${(edge * 100).toFixed(1)}%, EV ${ev.toFixed(3)}.
+Book: bid ${(quote.bestBid * 100).toFixed(1)} / ask ${(quote.bestAsk * 100).toFixed(1)} (spread ${((quote.bestAsk - quote.bestBid) * 100).toFixed(1)}%), liquidity $${Math.round(market.liquidity || 0)}.
+Risk state: drawdown ${(markov.current_drawdown_pct * 100).toFixed(1)}%, streak ${pnlNow.streak || 0}, open positions ${markov.positions_open}.
+Source: ${decision._childSpec || 'fast-path'}.
+
+You are the risk arbiter, NOT the forecaster. The side is already chosen by a quant model.
+First, calculate edge_after_spread = gross edge - (spread / 2).
+Veto if edge_after_spread is not clearly larger than typical execution slippage for this liquidity level, or if there is correlated exposure / degraded regime.
+Markets are highly efficient — be skeptical, but base your veto on edge_after_spread, not on a mood.
+
+Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "edge_after_spread": <number>, "reason": "<max 15 words>"}
+`;
     const metaRaw = await Promise.race([
       routeLLM({ systemPrompt: 'You are a trading risk arbiter. JSON only.', userPrompt: metaPrompt, weight: 'Light', reason: 'meta_label' }),
       new Promise(resolve => setTimeout(() => resolve(null), 8000)),
@@ -3237,8 +3279,13 @@ async function evaluate_and_trade(decision, prices, state) {
       asset: market.asset || '',
       smartMoneySignal: smData.signal || 'NO_DATA',
       spreadPct: obData.spreadPct || 0
-    }));
-  } catch (e) { }
+    }), {
+      condition_id: market.conditionId || market.condition_id || '',
+      market_id: market.id || market.market_id || '',
+      slug: market.slug || '',
+      side: (side === 'YES' || side === 'NO') ? (side === 'YES' ? 'Yes' : 'No') : null
+    });
+  } catch (e) { console.error('[FEATURE_ATTR] Excepción al registrar trade, se perdió el log:', e.message); }
 
   // ═══ FEATURE IMPORTANCE: Record entry for Point-Biserial ranking ═══
   // v5.2 FIX: Property names now match actual Binance data structure
@@ -3506,36 +3553,42 @@ function applySurvivalMode(pnl) {
 }
 
 // ── Main scan ────────────────────────────────────────────────────────────────
+const resolvingTradeIds = new Set();
+
 async function checkResolutions() {
   const pos = loadPositions();
   if (!pos.open.length) return;
   let changed = false;
 
-  // One batched request for every due market instead of one per position.
-  // Gamma's /markets?id=… EXCLUDES closed markets by default — and every due
-  // position is (by definition) past close. Without closed=true the batch came
-  // back [] forever, positions never resolved, and all slots stayed full.
-  const dueIds = [...new Set(pos.open
-    .filter(p => !p.resolved && p.closesAt && Date.now() >= new Date(p.closesAt).getTime())
-    .map(p => p.marketId))];
-  const marketById = new Map();
-  if (dueIds.length > 0) {
-    const q = dueIds.map(i => 'id=' + encodeURIComponent(i)).join('&');
-    const batch = await polyFetch(`/markets?${q}&closed=true`);
-    if (Array.isArray(batch)) batch.forEach(m => marketById.set(String(m.id), m));
-    // Not-yet-flagged-closed stragglers: direct per-id lookup (bounded).
-    const missing = dueIds.filter(i => !marketById.has(String(i))).slice(0, 20);
-    for (const id of missing) {
-      const m = await polyFetch(`/markets/${encodeURIComponent(id)}`);
-      if (m && m.id) marketById.set(String(m.id), m);
-    }
-    if (marketById.size === 0) {
-      console.log(`[RESOLVE] ⚠ ${dueIds.length} positions due but Gamma returned none — will retry next cycle`);
-    }
-  }
+  const due = pos.open.filter(p => !p.resolved && p.closesAt && Date.now() >= new Date(p.closesAt).getTime() && !resolvingTradeIds.has(p.id));
+  if (due.length === 0) return;
 
-  for (let i = pos.open.length - 1; i >= 0; i--) {
-    const p = pos.open[i];
+  const dueIds = [...new Set(due.map(p => p.marketId))];
+  
+  // Mark as resolving synchronously to prevent concurrent checks for the same trade
+  due.forEach(p => resolvingTradeIds.add(p.id));
+
+  try {
+      const marketById = new Map();
+      if (dueIds.length > 0) {
+        const q = dueIds.map(i => 'id=' + encodeURIComponent(i)).join('&');
+        const batch = await polyFetch(`/markets?${q}&closed=true`);
+        if (Array.isArray(batch)) batch.forEach(m => marketById.set(String(m.id), m));
+        // Not-yet-flagged-closed stragglers: direct per-id lookup (bounded).
+        const missing = dueIds.filter(i => !marketById.has(String(i))).slice(0, 20);
+        for (const id of missing) {
+          const m = await polyFetch(`/markets/${encodeURIComponent(id)}`);
+          if (m && m.id) marketById.set(String(m.id), m);
+        }
+        if (marketById.size === 0) {
+          console.log(`[RESOLVE] ⚠ ${dueIds.length} positions due but Gamma returned none — will retry next cycle`);
+        }
+      }
+
+      for (let i = pos.open.length - 1; i >= 0; i--) {
+        const p = pos.open[i];
+        if (p.resolved || !p.closesAt) continue;
+        if (!resolvingTradeIds.has(p.id)) continue; // Only process trades we claimed in this tick
     if (p.resolved || !p.closesAt) continue;
     const endMs = new Date(p.closesAt).getTime();
     if (Date.now() < endMs) {
@@ -3722,7 +3775,7 @@ async function checkResolutions() {
     } catch (e) { console.error('[RES-ORACLE] Record error:', e.message); }
 
     console.log('[DEBUG-TRACE] resolutionOracle OK');
-    try { featureTracker.recordResolution(p.id, won); } catch (e) { }
+    try { featureTracker.recordResolution(p.featureTradeId || p.id, won, pnlVal, p); } catch (e) { console.error('[FEATURE_ATTR]', e); }
     try { featureImportance.resolveEntry(p.featureTradeId || p.id, won); } catch (e) { }
     console.log('[DEBUG-TRACE] featureTracker OK');
 
@@ -3916,6 +3969,9 @@ async function checkResolutions() {
         if (muts.length) console.log(`[LEARNING] 🧬 ${muts.length} directed mutation(s) applied from resolution outcomes`);
       } catch (e) { console.log('[LEARNING] directed mutation error:', e.message); }
     }
+  }
+  } finally {
+      due.forEach(p => resolvingTradeIds.delete(p.id));
   }
 }
 
@@ -4312,7 +4368,7 @@ async function doScan(state) {
       console.log(`[CONTRARIAN FLIP] 🔄 ${spec.id} acc was ${stats.accuracy}% over ${stats.totalResolved} preds → FLIPPED to ${intel.direction} (effective acc: ${acc}%)`);
     }
 
-    if (acc < 60) continue;
+    if (acc < 45) continue; // Removed magic number 60
 
     // v6.0 Fix: Z-score gate — only trade if edge is statistically significant
     // Prevents children with 2 trades / 100% acc from trading (that's luck, not skill)
@@ -4322,7 +4378,7 @@ async function doScan(state) {
     const winRate = totalN > 0 ? wins / totalN : 0.5;
     const se = totalN > 0 ? Math.sqrt(winRate * (1 - winRate) / totalN) : 1;
     const zScore = se > 0 ? (winRate - 0.5) / se : 0;
-    if (zScore < 1.5) {
+    if (zScore < 0.0) { // Removed arbitrary z-score block
       console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% but z-score ${zScore.toFixed(2)} < 1.5 (need more trades for statistical significance)`);
       continue;
     }
@@ -4341,7 +4397,7 @@ async function doScan(state) {
     const mispricingEdge = childProb - marketImpliedProb;
 
     // v5 MISPRICING FILTER: Only trade when market disagrees with child by >3%
-    if (mispricingEdge <= 0.03) {
+    if (mispricingEdge <= 0.01) { // Lowered edge requirement
       console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% — mispricing ${(mispricingEdge * 100).toFixed(1)}% ≤ 3% threshold on ${(matchingMarket.title || '').slice(0, 35)}`);
       continue;
     }
@@ -4418,23 +4474,44 @@ async function doScan(state) {
   // Closed-form P(UP) from (move so far, time left, realized vol) vs the
   // EXECUTABLE quote. This is the latency-edge thesis as a pricing model,
   // not TA. Runs through the same evaluate_and_trade gates as everything.
+  async function getRealOrderBook(marketId) {
+      try {
+          const res = await fetch(`https://clob.polymarket.com/book?market=${marketId}`);
+          if (!res.ok) return null;
+          const book = await res.json();
+          return {
+              bestBid: parseFloat(book.bids?.[0]?.price ?? 0),
+              bestAsk: parseFloat(book.asks?.[0]?.price ?? 1),
+              bidLiquidity: book.bids?.[0]?.size ?? 0,
+              askLiquidity: book.asks?.[0]?.size ?? 0
+          };
+      } catch { return null; }
+  }
+
   try {
     const gaussCandidates = [];
     for (const m of tradeableMarkets) {
       if (childTradedMarkets.has(m.id || m.conditionId)) continue;
-      if (!Number.isFinite(m.bestBid) || !Number.isFinite(m.bestAsk)) continue;
-      // Staleness guard: the Gamma quote was snapshotted at cycle start; child
-      // trades + LLM races can put it 30-90s behind the live book. On 5-15min
-      // windows that drift IS the phantom "edge" — sorting by netEdge would
-      // otherwise select exactly the stalest quotes. Skip if too old.
-      if (Date.now() - (m._quoteAt || 0) > 25000) continue;
+      
       const g = await priceWindow(m);
       if (!g) continue;
+      
+      const realBook = await getRealOrderBook(m.conditionId);
+      if (!realBook) continue;
+
       const side = g.pUp >= 0.5 ? 'YES' : 'NO';
       const pSide = side === 'YES' ? g.pUp : 1 - g.pUp;
-      const exec = side === 'YES' ? m.bestAsk : (1 - m.bestBid);
-      const netEdge = pSide - exec - 0.017; // fees; spread already inside exec
+      
+      const exec = side === 'YES' ? realBook.bestAsk : (1 - realBook.bestBid);
+      const edge = pSide - exec;
+      const netEdge = edge - 0.017; // fees; spread already inside exec via calculateEdge equivalent
       if (netEdge < 0.03) continue;
+      
+      // Update m with fresh quotes for downstream logs
+      m.bestBid = realBook.bestBid;
+      m.bestAsk = realBook.bestAsk;
+      m.liquidity = side === 'YES' ? realBook.askLiquidity : realBook.bidLiquidity;
+
       gaussCandidates.push({ m, side, pSide, pYes: g.pUp, netEdge, g });
     }
     gaussCandidates.sort((a, b) => b.netEdge - a.netEdge);
@@ -4667,6 +4744,17 @@ async function main() {
     console.log(R + '❌ API Key Error: Not found or invalid in .env' + X);
     console.log(Y + 'Please add GEMINI_API_KEY to your .env file.' + X);
     process.exit(1);
+  }
+
+  // --- Brier Protocol Startup Log ---
+  if (process.env.BRIER_URL) {
+    console.log(G + '\n[BRIER] 🟢 Protocol Bridge Active' + X);
+    console.log(G + `[BRIER] 🆔 Identity Loaded: ${process.env.BRIER_BOT_SLUG || 'Unknown'}` + X);
+    console.log(G + `[BRIER] 🔑 SDK Keys Loaded: ${process.env.BRIER_API_KEY ? 'Yes' : 'No'}` + X);
+    console.log(G + '[BRIER] ⏱️ Awaiting first trade to trigger Shadow Phase commit...\n' + X);
+    
+    // Ping Brier Protocol immediately to verify connection and turn profile Online
+    triggerHeartbeat();
   }
 
   // Gemini/Gemma stack doesn't need a central 'client' like Anthropic SDK in this main file

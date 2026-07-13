@@ -17,12 +17,12 @@ const MODELS = {
     FAST: 'gemini-3.5-flash',                     // 5 RPM, 250K TPM, 20 RPD — FALLBACK #1 (replaces dead 2.0-flash)
     SNIPER: 'gemini-2.5-flash',                   // 5 RPM, 250K TPM, 20 RPD — CRITICAL ONLY
     LITE: 'gemini-2.5-flash-lite',                // 10 RPM, 250K TPM, 20 RPD — OVERFLOW
-    FLASH3: 'gemini-3-flash',                     // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
+    FLASH3: 'gemini-2.5-flash-preview-05-20',             // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2 (id real en la API)
     // === RESERVE FLEET (Gemma 4 — Unlimited TPM, 1.5K RPD each) ===
-    GEMMA_31B: 'gemma-4-31b',                     // 15 RPM, Unlimited TPM, 1.5K RPD
-    GEMMA_26B: 'gemma-4-26b',                     // 15 RPM, Unlimited TPM, 1.5K RPD
+    GEMMA_31B: 'gemma-4-31b-it',                  // 15 RPM, Unlimited TPM, 1.5K RPD (id real: -it)
+    GEMMA_26B: 'gemma-4-26b-a4b-it',             // 15 RPM, Unlimited TPM, 1.5K RPD (id real: -a4b-it)
     // === EMBEDDINGS ===
-    EMBEDDER: 'gemini-embedding-002',             // 100 RPM, 30K TPM, 1K RPD
+    EMBEDDER: 'gemini-embedding-2',               // id real en la API (gemini-embedding-002 no existe → daba 404)
     EMBEDDER_LEGACY: 'gemini-embedding-001',
 };
 

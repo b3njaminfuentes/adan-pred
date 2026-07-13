@@ -6,52 +6,129 @@ import fs from 'fs';
 import path from 'path';
 
 const ADAN_DIR = process.env.ADAN_DIR || process.cwd();
-const DATA_FILE = path.join(ADAN_DIR, 'data', 'feature_log.json');
+const JSONL_FILE = path.join(ADAN_DIR, 'data', 'feature_log.jsonl');
 
 export class FeatureTracker {
     constructor() {
-        this.trades = this._load();
-    }
-
-    _load() {
+        this.knownEntries = new Set();
         try {
-            if (fs.existsSync(DATA_FILE)) {
-                return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            if (fs.existsSync(JSONL_FILE)) {
+                const lines = fs.readFileSync(JSONL_FILE, 'utf-8').trim().split('\n');
+                for (const line of lines) {
+                    if (!line) continue;
+                    try {
+                        const row = JSON.parse(line);
+                        if (row.type === 'entry') this.knownEntries.add(row.id);
+                    } catch (e) { }
+                }
             }
         } catch (e) { }
-        return [];
     }
 
-    _save() {
+    _buildState() {
+        const trades = new Map();
         try {
-            const dir = path.dirname(DATA_FILE);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(DATA_FILE, JSON.stringify(this.trades, null, 2));
-        } catch (e) {
-            console.error('[FEATURE_ATTR] Save error:', e.message);
-        }
+            if (fs.existsSync(JSONL_FILE)) {
+                const lines = fs.readFileSync(JSONL_FILE, 'utf-8').trim().split('\n');
+                for (const line of lines) {
+                    if (!line) continue;
+                    try {
+                        const row = JSON.parse(line);
+                        if (row.type === 'entry') {
+                            trades.set(row.id, { ...row, resolved: false, won: null, pnl: 0 });
+                        } else if (row.type === 'resolution') {
+                            const t = trades.get(row.id);
+                            if (t) {
+                                t.resolved = true;
+                                t.won = row.won;
+                                t.pnl = row.pnl;
+                                if (t.resolutionCount) {
+                                    t.resolutionCount++;
+                                    console.warn(`[WARNING] Duplicate resolution found for ID ${row.id}`);
+                                } else {
+                                    t.resolutionCount = 1;
+                                }
+                            }
+                        } else if (row.type === 'void') {
+                            trades.delete(row.id);
+                        }
+                    } catch (e) { }
+                }
+            }
+        } catch (e) { }
+        return Array.from(trades.values());
     }
 
     // Record features when entering a trade
-    recordEntry(tradeId, features) {
-        this.trades.push({
+    recordEntry(tradeId, features, marketCtx = {}) {
+        if (!marketCtx.condition_id || !marketCtx.side) {
+            console.error('[FEATURE_ATTR] ALERTA: trade sin condition_id o side. Este trade quedará huérfano y no se podrá resolver:', marketCtx);
+        }
+
+        const row = {
+            type: 'entry',
             id: tradeId,
-            timestamp: new Date().toISOString(),
-            features: { ...features },
-            resolved: false,
-            won: null
-        });
-        this._save();
+            ts: new Date().toISOString(),
+            condition_id: marketCtx.condition_id || null,
+            market_id: marketCtx.market_id || null,
+            slug: marketCtx.slug || null,
+            side: marketCtx.side || null,
+            features: { ...features }
+        };
+        try {
+            const dir = path.dirname(JSONL_FILE);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.appendFileSync(JSONL_FILE, JSON.stringify(row) + '\n');
+            this.knownEntries.add(tradeId);
+        } catch (e) {
+            console.error('[FEATURE_ATTR] Entry append error:', e.message);
+        }
     }
 
-    // Update trade with resolution
-    recordResolution(tradeId, won, pnl) {
-        const trade = this.trades.find(t => t.id === tradeId);
-        if (trade) {
-            trade.resolved = true;
-            trade.won = won;
-            trade.pnl = pnl;
-            this._save();
+    // We no longer update trades in memory here. The resolver handles this independently.
+    // If we need to record resolution locally, we append a resolution event.
+    recordResolution(tradeId, won, pnl, posCtx = null) {
+        if (!this.knownEntries.has(tradeId)) {
+            if (posCtx && posCtx.marketId) {
+                // Backfill entry
+                const fallbackFeatures = this.extractFeatures(posCtx);
+                const entryRow = {
+                    type: 'entry',
+                    id: tradeId,
+                    ts: posCtx.entryTime || new Date().toISOString(),
+                    condition_id: posCtx.conditionId || null,
+                    market_id: posCtx.marketId || null,
+                    slug: posCtx.slug || null,
+                    side: posCtx.side || null,
+                    features: fallbackFeatures,
+                    backfilled: true
+                };
+                try {
+                    fs.appendFileSync(JSONL_FILE, JSON.stringify(entryRow) + '\n');
+                    this.knownEntries.add(tradeId);
+                } catch (e) {}
+            } else {
+                // Can't backfill, log error and skip resolution
+                const orphanLogPath = path.join(path.dirname(JSONL_FILE), 'orphan_resolutions.log');
+                const errMsg = `${new Date().toISOString()} - Orphan ID: ${tradeId}\n`;
+                try {
+                    fs.appendFileSync(orphanLogPath, errMsg);
+                } catch (e) {}
+                return;
+            }
+        }
+
+        const row = {
+            type: 'resolution',
+            id: tradeId,
+            ts: new Date().toISOString(),
+            won,
+            pnl
+        };
+        try {
+            fs.appendFileSync(JSONL_FILE, JSON.stringify(row) + '\n');
+        } catch (e) {
+            console.error('[FEATURE_ATTR] Resolution append error:', e.message);
         }
     }
 
@@ -91,7 +168,8 @@ export class FeatureTracker {
 
     // Calculate per-feature win rates
     getAttribution() {
-        const resolved = this.trades.filter(t => t.resolved);
+        const trades = this._buildState();
+        const resolved = trades.filter(t => t.resolved);
         if (resolved.length < 10) {
             return { sufficient: false, totalTrades: resolved.length, features: {} };
         }

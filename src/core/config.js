@@ -19,7 +19,7 @@ const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const BINANCE_API = 'https://api.binance.com/api/v3';
 const SCAN_INTERVAL_MS = 60 * 1000; // 60sec — read the market every minute (oracle parked; loop body is quant-only)
 const MAX_POSITIONS = 18;    // TRAINING: más slots = más trades simultáneos
-const MIN_EDGE = 0.01;  // TRAINING: 1% edge — más agresivo para generar trades a Brier
+const MIN_EDGE = 0.02;  // Step 1: subir a un valor intermedio antes del backtest
 const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k
 
 // Symbols to track on Binance
@@ -30,7 +30,7 @@ const DEFAULT_STRATEGY = {
   minEdge: 0.02,    // TRAINING: 2% edge — maximize trades for learning
   minLiquidity: 200, // TRAINING: lower liquidity floor
   maxMarketsCheck: 30,
-  minConfidence: 60,
+  minConfidence: 50,
   maxHoursToClose: 168,
   version: 1,
   evolvedAt: null
