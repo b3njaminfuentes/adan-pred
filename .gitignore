@@ -18,3 +18,9 @@ qa_adan.log
 watchdog.log
 .env.bak*
 .env.qa
+\ndata/\n*.bak\n.lock\n*.lock
+
+data/
+*.bak
+.lock
+*.lock
