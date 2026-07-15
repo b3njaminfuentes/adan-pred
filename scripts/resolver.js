@@ -1,4 +1,4 @@
-const fs = require('fs');
+import fs from 'fs';
 const CLOB_BASE = 'https://clob.polymarket.com';
 const RATE_LIMIT_MS = 350;
 

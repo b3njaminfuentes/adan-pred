@@ -37,6 +37,10 @@ import { BrainTransitionManager, runBrainCycle, ATLAS, APPLE, SNAKE, EVA } from 
 
 const brainManager = new BrainTransitionManager();
 
+// Margen de fees+slippage restado al edge bruto antes de decidir un trade.
+// Antes hardcodeado en 5 lugares (-0.017) sin conexión a ninguna env var.
+const FEES_SLIPPAGE = Number(process.env.BRIER_MIN_EDGE ?? 0.017);
+
 // ── Anti-crash: ignore broken pipes + catch unhandled errors ─────────────────
 process.stdout.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
 process.stderr.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
@@ -2467,7 +2471,7 @@ async function think(markets, prices, pnl, openPos, state) {
     console.log(`[BRIER GATE] 🧠 brier=${myScore?.brier?.toFixed(3)} → +${(brierPenalty * 100).toFixed(0)}% edge required`);
   }
   const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
-  const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
+  const brainNetEdge = Math.abs(decision.edge || 0) - FEES_SLIPPAGE; // subtract fees+slippage
 
   // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
   // Edges above 20% are almost certainly miscalibrated — cap Kelly and flag suspicion
@@ -4407,7 +4411,7 @@ async function doScan(state) {
     const optChild = selfOptimizer.loadParams();
     const rawChildConf = intel.confidence || 0;
     const calibChildConf = Math.round(rawChildConf * (mcChild.multiplier || 1.0));
-    const estimatedFees = 0.017;
+    const estimatedFees = FEES_SLIPPAGE;
     const netEdge = mispricingEdge - estimatedFees;
     if (calibChildConf < optChild.childConfGate || netEdge < optChild.childMinEdge) {
       const msg = `⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`;
@@ -4444,7 +4448,7 @@ async function doScan(state) {
     // bet, poisoning EV/Kelly/Brier. A probability must stay a probability.
     const pSideCt = Math.min(0.97, Math.max(0.03, calibConf / 100));
     const pYesCt = ct.side === 'YES' ? pSideCt : 1 - pSideCt;
-    const netEdgeCt = ct.edge - 0.017; // net of fees+slippage
+    const netEdgeCt = ct.edge - FEES_SLIPPAGE; // net of fees+slippage
     const decision = {
       action: 'BET',
       market: ct.market,
@@ -4504,7 +4508,7 @@ async function doScan(state) {
       
       const exec = side === 'YES' ? realBook.bestAsk : (1 - realBook.bestBid);
       const edge = pSide - exec;
-      const netEdge = edge - 0.017; // fees; spread already inside exec via calculateEdge equivalent
+      const netEdge = edge - FEES_SLIPPAGE; // fees; spread already inside exec via calculateEdge equivalent
       if (netEdge < 0.03) continue;
       
       // Update m with fresh quotes for downstream logs
@@ -4938,7 +4942,7 @@ async function main() {
             // (same definition as CHILD DIRECT), not the old |yesPrice-0.5| skew.
             const sideFast = childIntel?.direction === 'UP' ? 'YES' : 'NO';
             const mispricingFast = (calibFastConf / 100) - (sideFast === 'YES' ? nm.yesPrice : 1 - nm.yesPrice);
-            const netFastEdge = mispricingFast - 0.017; // fees
+            const netFastEdge = mispricingFast - FEES_SLIPPAGE; // fees
             const _optFast = selfOptimizer.loadParams();
             if (childIntel && calibFastConf >= _optFast.confGate && netFastEdge > _optFast.minEdge) {
               const pSideFast = Math.min(0.97, Math.max(0.03, calibFastConf / 100));
