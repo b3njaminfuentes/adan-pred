@@ -3164,6 +3164,14 @@ Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "edge_after_spread": <
     } else if (overfitScore > 1.15) {
       purgedWFMult = 0.8;
     }
+    // isModelReliable() was computed but never consulted — a model confirmed to
+    // score no better than the naive majority-class baseline still staked full
+    // size. Optimistic default (true) when there's no validation yet, so this
+    // only bites once purgedWF has actually run and found a problem.
+    if (!purgedWF.isModelReliable()) {
+      purgedWFMult = Math.min(purgedWFMult, 0.7);
+      console.log(`[PURGED-WF] ⚠ Model not reliable (test acc ≈ base rate) — stake ×0.7`);
+    }
   } catch (e) { console.error('[PURGED-WF] Overfit check error:', e.message); }
   // v9.0: Scenario Forecaster — "Third Eye" Kelly multiplier
   const forecastMult = scenarioForecaster.getKellyMultiplier();

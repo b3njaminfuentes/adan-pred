@@ -10,6 +10,10 @@ import { DIR, loadPositions, loadPnL } from './config.js';
 const PARAMS_PATH = path.join(DIR, 'self_optimized_params.json');
 const OPT_LOG_PATH = path.join(DIR, 'optimization_log.jsonl');
 
+// Same fee+slippage margin adan-pred.js uses (FEES_SLIPPAGE) — the grid search
+// must calibrate gates against the REAL live margin, not a stale hardcoded one.
+const FEES_SLIPPAGE = Number(process.env.BRIER_MIN_EDGE ?? 0.017);
+
 const DEFAULTS = {
   confGate: 55,
   minEdge: 0.03,
@@ -94,7 +98,7 @@ export class SelfOptimizer {
     for (const t of trades) {
       const conf = t.confidence || t.confidence_pct || 50;
       const rawEdge = Math.abs(t.edge || 0);
-      const netEdge = rawEdge - 0.017; // fee + slippage deduction
+      const netEdge = rawEdge - FEES_SLIPPAGE; // fee + slippage deduction (env-configurable, was hardcoded)
 
       // Gate 1: confidence
       if (conf < confGate) continue;

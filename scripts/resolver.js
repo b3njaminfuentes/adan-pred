@@ -68,7 +68,10 @@ async function main() {
           id: trade.id,
           ts: new Date().toISOString(),
           won: result.won,
-          pnl: 0 // placeholder
+          // This log format never records stake/entryPrice, so a real dollar PnL
+          // can't be computed here. null (not 0) so downstream `t.pnl || 0` reducers
+          // don't silently treat unresolved-PnL trades as confirmed break-even.
+          pnl: null
       };
       fs.appendFileSync(filePath, JSON.stringify(resolutionRow) + '\n');
       resueltosAhora++;
