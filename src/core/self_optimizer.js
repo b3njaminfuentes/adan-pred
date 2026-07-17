@@ -38,7 +38,11 @@ export class SelfOptimizer {
 
   run() {
     const pos = loadPositions();
-    const trades = (pos.closed || []).slice(-500);
+    // Chronological order (defensive — don't assume `closed` is pre-sorted).
+    const allClosed = [...(pos.closed || [])].sort((a, b) =>
+      new Date(a.entryTime || a.openedAt || 0) - new Date(b.entryTime || b.openedAt || 0)
+    );
+    const trades = allClosed.slice(-500);
     if (trades.length < 100) {
       console.log(`[SELF-OPT] Only ${trades.length} closed trades — need 100+ to optimize`);
       return null;
@@ -46,28 +50,56 @@ export class SelfOptimizer {
 
     const current = this.loadParams();
 
-    // Grid search over 3 dimensions
+    // Purged chronological train/test split. Scoring a grid search on the same
+    // trades it was selected from always finds a "winner" (confirmed: this
+    // produced simWR=77.78% vs. 44.8% real win rate on resolved trades) — same
+    // fee/spend the model is fit and evaluated on the same data. Selection must
+    // come from a held-out slice, with a small embargo gap so boundary trades
+    // can't leak into both sides (same spirit as purged_walkforward.js).
+    const EMBARGO = 10;
+    const testSize = Math.max(60, Math.floor(trades.length * 0.3));
+    const testStart = trades.length - testSize;
+    const trainEnd = Math.max(0, testStart - EMBARGO);
+    const trainSet = trades.slice(0, trainEnd);
+    const testSet = trades.slice(testStart);
+
+    if (trainSet.length < 50 || testSet.length < 30) {
+      console.log(`[SELF-OPT] Not enough trades for a purged split (train=${trainSet.length}, test=${testSet.length})`);
+      return null;
+    }
+
+    // Grid search: every combo is scored on TEST only. Hour-of-day stats (the
+    // 3rd gate) are built from TRAIN, so that filter isn't fit and graded on the
+    // same trades either.
     const results = [];
     for (let confGate = 50; confGate <= 80; confGate += 5) {
       for (let minEdge = 0.01; minEdge <= 0.08; minEdge += 0.01) {
         for (let hourThr = 0.38; hourThr <= 0.55; hourThr += 0.02) {
-          const sim = this._simulate(trades, confGate, minEdge, hourThr);
+          const sim = this._simulate(testSet, confGate, minEdge, hourThr, trainSet);
           results.push({ confGate, minEdge: parseFloat(minEdge.toFixed(2)), hourThr: parseFloat(hourThr.toFixed(2)), ...sim });
         }
       }
     }
 
-    // Sort by composite score: WR × sqrt(taken) × profitFactor
-    results.sort((a, b) => b.score - a.score);
+    // Safety: must take at least 25% of the TEST set (prevent "skip everything").
+    const minTestTrades = Math.max(15, Math.floor(testSet.length * 0.25));
+    const eligible = results.filter(r => r.taken >= minTestTrades);
 
-    // Safety: must take at least 25% of trades (prevent "skip everything" degenerate)
-    const minTrades = Math.floor(trades.length * 0.25);
-    const best = results.find(r => r.taken >= minTrades && r.taken >= 30) || results[0];
-
-    if (!best || best.taken < 20) {
-      console.log(`[SELF-OPT] No valid parameter set found (best had ${best?.taken || 0} trades)`);
+    if (eligible.length === 0) {
+      console.log(`[SELF-OPT] No parameter set clears the min-test-trades bar (${minTestTrades} of ${testSet.length})`);
       return null;
     }
+
+    eligible.sort((a, b) => b.score - a.score);
+    const top = eligible[0];
+
+    // One-standard-error rule (Elements of Statistical Learning §7.10): among
+    // configs within 1 SE of the best held-out score, prefer the more
+    // conservative one (higher confGate — fewer, higher-conviction trades)
+    // instead of chasing the single noisiest peak of a 504-combo grid.
+    const topSE = top.taken > 0 ? Math.sqrt(top.wr * (1 - top.wr) / top.taken) : 1;
+    const withinOneSE = eligible.filter(r => r.score >= top.score - topSE);
+    const best = withinOneSE.reduce((a, b) => (b.confGate > a.confGate ? b : a), withinOneSE[0]);
 
     // Derive child params (slightly more aggressive)
     best.childConfGate = Math.max(50, best.confGate - 5);
@@ -75,6 +107,8 @@ export class SelfOptimizer {
     best.optimizedAt = new Date().toISOString();
     best.version = (current.version || 0) + 1;
     best.windowSize = trades.length;
+    best.trainSize = trainSet.length;
+    best.testSize = testSet.length;
 
     // Save
     this._saveParams(best);
@@ -83,10 +117,13 @@ export class SelfOptimizer {
     return { old: current, new: best };
   }
 
-  _simulate(trades, confGate, minEdge, hourThr) {
-    // Build hour stats from THIS window only (no data leakage)
+  // `trades` is what gets scored. `hourStatsSource` (defaults to `trades` for
+  // backward compat) is what the hour-of-day filter's win-rate table is BUILT
+  // from — pass the train set here so the filter isn't fit and graded on the
+  // same data it's being scored against.
+  _simulate(trades, confGate, minEdge, hourThr, hourStatsSource = trades) {
     const hourStats = {};
-    for (const t of trades) {
+    for (const t of hourStatsSource) {
       const h = new Date(t.entryTime || t.openedAt || 0).getUTCHours().toString();
       if (!hourStats[h]) hourStats[h] = { w: 0, l: 0 };
       if (t.result === 'WIN' || t.won === true) hourStats[h].w++;
