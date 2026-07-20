@@ -73,6 +73,7 @@ export class FeatureTracker {
             market_id: marketCtx.market_id || null,
             slug: marketCtx.slug || null,
             side: marketCtx.side || null,
+            orderbook_snapshot: marketCtx.orderbook_snapshot || null,
             features: { ...features }
         };
         try {
@@ -123,7 +124,9 @@ export class FeatureTracker {
             id: tradeId,
             ts: new Date().toISOString(),
             won,
-            pnl
+            pnl,
+            network_fee_usd: posCtx?.network_fee_usd || 0,
+            polymarket_fee_usd: posCtx?.polymarket_fee_usd || 0
         };
         try {
             fs.appendFileSync(JSONL_FILE, JSON.stringify(row) + '\n');

@@ -3291,11 +3291,11 @@ Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "edge_after_spread": <
       asset: market.asset || '',
       smartMoneySignal: smData.signal || 'NO_DATA',
       spreadPct: obData.spreadPct || 0
-    }), {
       condition_id: market.conditionId || market.condition_id || '',
       market_id: market.id || market.market_id || '',
       slug: market.slug || '',
-      side: (side === 'YES' || side === 'NO') ? (side === 'YES' ? 'Yes' : 'No') : null
+      side: (side === 'YES' || side === 'NO') ? (side === 'YES' ? 'Yes' : 'No') : null,
+      orderbook_snapshot: { bid: quote.bestBid, ask: quote.bestAsk, spread: quote.bestAsk - quote.bestBid }
     });
   } catch (e) { console.error('[FEATURE_ATTR] Excepción al registrar trade, se perdió el log:', e.message); }
 
@@ -3642,9 +3642,14 @@ async function checkResolutions() {
       const ep = effectivePrice;
       const takerFee = p.stake * 0.25 * ep * Math.pow(ep * (1 - ep), 2);
       pnlVal = parseFloat((grossProfit - takerFee).toFixed(2));
+      p.polymarket_fee_usd = parseFloat(takerFee.toFixed(2));
+      p.network_fee_usd = 0.05; // Fixed est network fee on polygon
+
     } else {
       const lossFee = p.stake * 0.25 * effectivePrice * Math.pow(effectivePrice * (1 - effectivePrice), 2);
       pnlVal = parseFloat((-p.stake - lossFee).toFixed(2));
+      p.polymarket_fee_usd = parseFloat(lossFee.toFixed(2));
+      p.network_fee_usd = 0.05; // Fixed est network fee on polygon
     }
     console.log('[DEBUG-TRACE] Math & PNL OK');
 
