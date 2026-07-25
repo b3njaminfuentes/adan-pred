@@ -57,7 +57,7 @@ export class PolymarketWS {
 
   // ── CONNECT ──
   connect(assetIds = []) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === 1 /* WebSocket.OPEN */) {
       // Already connected — just subscribe to new assets
       this._subscribe(assetIds);
       return;
@@ -120,7 +120,7 @@ export class PolymarketWS {
 
   // ── SUBSCRIBE to market assets ──
   _subscribe(assetIds) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.ws || this.ws.readyState !== 1 /* WebSocket.OPEN */) return;
 
     const newIds = assetIds.filter(id => !this.subscribedAssets.has(id));
     if (newIds.length === 0) return;
@@ -153,7 +153,7 @@ export class PolymarketWS {
   _startHeartbeat() {
     this._stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      if (this.ws && this.ws.readyState === 1 /* WebSocket.OPEN */) {
         try {
           this.ws.ping(); // Standard WS control frame
           this.ws.send('{"type":"ping"}'); // App-level ping (Polymarket CLOB)

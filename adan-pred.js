@@ -37,6 +37,10 @@ import { BrainTransitionManager, runBrainCycle, ATLAS, APPLE, SNAKE, EVA } from 
 
 const brainManager = new BrainTransitionManager();
 
+// Margen de fees+slippage restado al edge bruto antes de decidir un trade.
+// Antes hardcodeado en 5 lugares (-0.017) sin conexión a ninguna env var.
+const FEES_SLIPPAGE = Number(process.env.BRIER_MIN_EDGE ?? 0.017);
+
 // ── Anti-crash: ignore broken pipes + catch unhandled errors ─────────────────
 process.stdout.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
 process.stderr.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
@@ -2467,7 +2471,7 @@ async function think(markets, prices, pnl, openPos, state) {
     console.log(`[BRIER GATE] 🧠 brier=${myScore?.brier?.toFixed(3)} → +${(brierPenalty * 100).toFixed(0)}% edge required`);
   }
   const effectiveMinEdge = (isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0)) + brierPenalty;
-  const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
+  const brainNetEdge = Math.abs(decision.edge || 0) - FEES_SLIPPAGE; // subtract fees+slippage
 
   // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
   // Edges above 20% are almost certainly miscalibrated — cap Kelly and flag suspicion
@@ -2480,7 +2484,12 @@ async function think(markets, prices, pnl, openPos, state) {
 
   if (shouldBet && (calibratedConf < effectiveConfGate || brainNetEdge < effectiveMinEdge)) {
     shouldBet = false;
-    const msg = `⛔ QUANT GATE [v${optParams.version || 0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge * 100).toFixed(1)}% < ${(effectiveMinEdge * 100).toFixed(1)}% — below evolved threshold`;
+    const failConfBrain = calibratedConf < effectiveConfGate;
+    const failEdgeBrain = brainNetEdge < effectiveMinEdge;
+    const brainReasons = [];
+    if (failConfBrain) brainReasons.push(`calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%`);
+    if (failEdgeBrain) brainReasons.push(`netEdge=${(brainNetEdge * 100).toFixed(1)}% < ${(effectiveMinEdge * 100).toFixed(1)}%`);
+    const msg = `⛔ QUANT GATE [v${optParams.version || 0}+ES]: ${brainReasons.join(', ')} — below evolved threshold`;
     decision.thought = (decision.thought || '') + `\n${msg}`;
     reportTelemetry(`Rejected ${chosen?.asset || 'market'}: ${msg}`);
     console.log(msg); // <--- Added this line
@@ -3160,6 +3169,14 @@ Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "edge_after_spread": <
     } else if (overfitScore > 1.15) {
       purgedWFMult = 0.8;
     }
+    // isModelReliable() was computed but never consulted — a model confirmed to
+    // score no better than the naive majority-class baseline still staked full
+    // size. Optimistic default (true) when there's no validation yet, so this
+    // only bites once purgedWF has actually run and found a problem.
+    if (!purgedWF.isModelReliable()) {
+      purgedWFMult = Math.min(purgedWFMult, 0.7);
+      console.log(`[PURGED-WF] ⚠ Model not reliable (test acc ≈ base rate) — stake ×0.7`);
+    }
   } catch (e) { console.error('[PURGED-WF] Overfit check error:', e.message); }
   // v9.0: Scenario Forecaster — "Third Eye" Kelly multiplier
   const forecastMult = scenarioForecaster.getKellyMultiplier();
@@ -3278,13 +3295,13 @@ Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "edge_after_spread": <
       confidence,
       asset: market.asset || '',
       smartMoneySignal: smData.signal || 'NO_DATA',
-      spreadPct: obData.spreadPct || 0
-    }), {
+      spreadPct: obData.spreadPct || 0,
       condition_id: market.conditionId || market.condition_id || '',
       market_id: market.id || market.market_id || '',
       slug: market.slug || '',
-      side: (side === 'YES' || side === 'NO') ? (side === 'YES' ? 'Yes' : 'No') : null
-    });
+      side: (side === 'YES' || side === 'NO') ? (side === 'YES' ? 'Yes' : 'No') : null,
+      orderbook_snapshot: { bid: quote.bestBid, ask: quote.bestAsk, spread: quote.bestAsk - quote.bestBid },
+    }));
   } catch (e) { console.error('[FEATURE_ATTR] Excepción al registrar trade, se perdió el log:', e.message); }
 
   // ═══ FEATURE IMPORTANCE: Record entry for Point-Biserial ranking ═══
@@ -3630,9 +3647,14 @@ async function checkResolutions() {
       const ep = effectivePrice;
       const takerFee = p.stake * 0.25 * ep * Math.pow(ep * (1 - ep), 2);
       pnlVal = parseFloat((grossProfit - takerFee).toFixed(2));
+      p.polymarket_fee_usd = parseFloat(takerFee.toFixed(2));
+      p.network_fee_usd = 0.05; // Fixed est network fee on polygon
+
     } else {
       const lossFee = p.stake * 0.25 * effectivePrice * Math.pow(effectivePrice * (1 - effectivePrice), 2);
       pnlVal = parseFloat((-p.stake - lossFee).toFixed(2));
+      p.polymarket_fee_usd = parseFloat(lossFee.toFixed(2));
+      p.network_fee_usd = 0.05; // Fixed est network fee on polygon
     }
     console.log('[DEBUG-TRACE] Math & PNL OK');
 
@@ -4221,7 +4243,11 @@ async function doScan(state) {
       state.status = 'Activating Night Watch Broad Scanner...'; render(state);
       const fallback = await polyFetch('/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false');
       const fbList = Array.isArray(fallback) ? fallback : (fallback?.markets || []);
-      const validFallback = fbList.filter(m => m.yesPrice > 0.05 && m.yesPrice < 0.95).slice(0, 10);
+      // Consolidated to the same 15-85% band as the main pool and the fast-path
+      // (was 5-95%, a looser threshold than the other two routes that also feed
+      // children — kept a child's extreme-market gate inconsistent depending on
+      // which loop found the market first).
+      const validFallback = fbList.filter(m => m.yesPrice > 0.15 && m.yesPrice < 0.85).slice(0, 10);
 
       if (validFallback.length > 0) {
         state.markets = validFallback.map(m => normalizePolymarket(m, prices));
@@ -4297,8 +4323,12 @@ async function doScan(state) {
     console.log('[CHILD DIRECT] ⚠ Scanner error:', e.message);
   }
 
+  // Consolidated to the same 15-85% band used by the Night Watch fallback and
+  // the fast-path setInterval (was 10-90%, the loosest of the three) — a child
+  // should face the same extreme-market gate regardless of which route surfaces
+  // the market first.
   const availableMarkets = (state.markets || []).filter(m =>
-    m.closesAt && new Date(m.closesAt) > new Date() && m.yesPrice >= 0.10 && m.yesPrice <= 0.90
+    m.closesAt && new Date(m.closesAt) > new Date() && m.yesPrice >= 0.15 && m.yesPrice <= 0.85
   );
 
   // ═══ Concept #21: Time-to-Close Filter — skip markets too close to expiry ═══
@@ -4361,11 +4391,15 @@ async function doScan(state) {
     const stats = childLearning.getChildStats(spec.id);
     let acc = stats.totalResolved >= 5 ? stats.accuracy : 50;
 
-    // v5.2 CONTRARIAN FLIP: If child has 100+ preds and <25% accuracy,
-    // they consistently predict WRONG — invert their signal for profit.
-    // Data: eth-5min(19%), sol-15min(18.9%), xrp-15min(17%), xrp-1hr(15.9%) all qualify.
+    // v5.2 CONTRARIAN FLIP — DISABLED (frozen 2026-07-25). This inverted a
+    // child's direction when it looked like a consistent loser, but it ran on
+    // accuracy stats contaminated by the resolveMarket() Up/Down framing bug
+    // (fixed 18 jul): the "acc" this gate keyed off of was measuring the wrong
+    // thing for however long that bug was live, so "invert it" was inverting
+    // noise, not signal. Re-enable only after a full post-fix data cycle
+    // validates it out-of-sample — do not just flip this back to `true`.
     let flipped = false;
-    if (stats.totalResolved >= 100 && acc < 25) {
+    if (false && stats.totalResolved >= 100 && acc < 25) {
       intel.direction = intel.direction === 'UP' ? 'DOWN' : 'UP';
       acc = 100 - acc; // 0% → 100%, 5% → 95%, 14% → 86%
       flipped = true;
@@ -4374,16 +4408,19 @@ async function doScan(state) {
 
     if (acc < 45) continue; // Removed magic number 60
 
-    // v6.0 Fix: Z-score gate — only trade if edge is statistically significant
-    // Prevents children with 2 trades / 100% acc from trading (that's luck, not skill)
+    // v9 fix: gate on the SAME statistical-skill test used for DNA evolution
+    // (wilmott.skill.computeSkill — src/core/wilmott_quant.js) instead of a
+    // separately hand-rolled z-score check. That inline version compared
+    // against 1.5 with no minimum-sample floor; computeSkill requires n>=10
+    // to even attempt a verdict and n>=30 before zScore counts for anything
+    // (z>1.645, ~95% one-tailed), so a lucky 2-trade streak can no longer pass.
+    // This is what closes the loop between "this child evolves" and "this
+    // child can bet right now" on one shared, tested criterion.
     const wins = flipped ? stats.wrong : stats.correct;
     const losses = flipped ? stats.correct : stats.wrong;
-    const totalN = wins + losses;
-    const winRate = totalN > 0 ? wins / totalN : 0.5;
-    const se = totalN > 0 ? Math.sqrt(winRate * (1 - winRate) / totalN) : 1;
-    const zScore = se > 0 ? (winRate - 0.5) / se : 0;
-    if (zScore < 0.0) { // Removed arbitrary z-score block
-      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% but z-score ${zScore.toFixed(2)} < 1.5 (need more trades for statistical significance)`);
+    const skill = wilmott.skill.computeSkill(wins, losses);
+    if (!skill.isSkilled) {
+      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% not statistically skilled yet (n=${wins + losses}, z=${skill.zScore.toFixed(2)}, need z>1.645 & n≥30)`);
       continue;
     }
 
@@ -4396,25 +4433,37 @@ async function doScan(state) {
     if (!matchingMarket) continue;
 
     const side = intel.direction === 'UP' ? 'YES' : 'NO';
-    const childProb = intel.confidence / 100;
+
+    // v8 fix: calibrate BEFORE computing edge. intel.confidence is a heuristic
+    // scanner score (~30-95, see childSignal()+ML boost), never a real
+    // probability — using it raw as childProb fabricated edges up to ~28% on
+    // markets that don't have that much edge. Calibrate here (same formula the
+    // execution loop below already applies) so the edge that gates, scores and
+    // sizes this trade is the same number we actually believe.
+    const mcChild = loadMetaCalib();
+    const optChild = selfOptimizer.loadParams();
+    const rawChildConf = intel.confidence || 0;
+    const calibChildConf = Math.round(rawChildConf * (mcChild.multiplier || 1.0));
+    const childProb = Math.min(0.97, Math.max(0.03, calibChildConf / 100)); // calibrated P(side), clamped
     const marketImpliedProb = side === 'YES' ? matchingMarket.yesPrice : (1 - matchingMarket.yesPrice);
     const mispricingEdge = childProb - marketImpliedProb;
 
     // v5 MISPRICING FILTER: Only trade when market disagrees with child by >3%
-    if (mispricingEdge <= 0.01) { // Lowered edge requirement
+    if (mispricingEdge <= 0.03) {
       console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% — mispricing ${(mispricingEdge * 100).toFixed(1)}% ≤ 3% threshold on ${(matchingMarket.title || '').slice(0, 35)}`);
       continue;
     }
 
     // v7: SELF-OPTIMIZED QUANT GATE for children
-    const mcChild = loadMetaCalib();
-    const optChild = selfOptimizer.loadParams();
-    const rawChildConf = intel.confidence || 0;
-    const calibChildConf = Math.round(rawChildConf * (mcChild.multiplier || 1.0));
-    const estimatedFees = 0.017;
+    const estimatedFees = FEES_SLIPPAGE;
     const netEdge = mispricingEdge - estimatedFees;
-    if (calibChildConf < optChild.childConfGate || netEdge < optChild.childMinEdge) {
-      const msg = `⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`;
+    const failConf = calibChildConf < optChild.childConfGate;
+    const failEdge = netEdge < optChild.childMinEdge;
+    if (failConf || failEdge) {
+      const reasons = [];
+      if (failConf) reasons.push(`calibConf=${calibChildConf}% < ${optChild.childConfGate}%`);
+      if (failEdge) reasons.push(`netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`);
+      const msg = `⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} ${reasons.join(', ')}`;
       console.log(`[CHILD DIRECT] ${msg}`);
       reportTelemetry(`Child Rejected: ${msg}`);
       // Shadow phase: a capital veto is not an information veto. Ship the view
@@ -4454,7 +4503,7 @@ async function doScan(state) {
     // bet, poisoning EV/Kelly/Brier. A probability must stay a probability.
     const pSideCt = Math.min(0.97, Math.max(0.03, calibConf / 100));
     const pYesCt = ct.side === 'YES' ? pSideCt : 1 - pSideCt;
-    const netEdgeCt = ct.edge - 0.017; // net of fees+slippage
+    const netEdgeCt = ct.edge - FEES_SLIPPAGE; // net of fees+slippage
     const decision = {
       action: 'BET',
       market: ct.market,
@@ -4514,7 +4563,7 @@ async function doScan(state) {
       
       const exec = side === 'YES' ? realBook.bestAsk : (1 - realBook.bestBid);
       const edge = pSide - exec;
-      const netEdge = edge - 0.017; // fees; spread already inside exec via calculateEdge equivalent
+      const netEdge = edge - FEES_SLIPPAGE; // fees; spread already inside exec via calculateEdge equivalent
       if (netEdge < 0.03) continue;
       
       // Update m with fresh quotes for downstream logs
@@ -4952,7 +5001,7 @@ async function main() {
             // (same definition as CHILD DIRECT), not the old |yesPrice-0.5| skew.
             const sideFast = childIntel?.direction === 'UP' ? 'YES' : 'NO';
             const mispricingFast = (calibFastConf / 100) - (sideFast === 'YES' ? nm.yesPrice : 1 - nm.yesPrice);
-            const netFastEdge = mispricingFast - 0.017; // fees
+            const netFastEdge = mispricingFast - FEES_SLIPPAGE; // fees
             const _optFast = selfOptimizer.loadParams();
             if (childIntel && calibFastConf >= _optFast.confGate && netFastEdge > _optFast.minEdge) {
               const pSideFast = Math.min(0.97, Math.max(0.03, calibFastConf / 100));

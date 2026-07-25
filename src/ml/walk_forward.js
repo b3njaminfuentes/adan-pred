@@ -83,6 +83,11 @@ export class WalkForward {
 
     const overallOOSWR = totalOOSCorrect / totalOOS;
     const overallLogLoss = totalLogLoss / totalOOS;
+    // Base rate = accuracy of just always predicting the majority class. A fixed
+    // 0.53 threshold looks "reliable" even when the model is worse than that
+    // naive baseline (same margin purged_walkforward.js uses for isReliable).
+    const positives = allOOSPredictions.filter(p => p.actual === 1).length;
+    const overallBaseRate = Math.max(positives, totalOOS - positives) / totalOOS;
 
     // Train final model on ALL data
     const finalModel = new LogisticRegression({ lambda: 0.01, lr: 0.1, epochs: 300 });
@@ -104,6 +109,7 @@ export class WalkForward {
       foldSize: FOLD_SIZE,
       overallOOSWR: parseFloat((overallOOSWR * 100).toFixed(1)),
       overallLogLoss: parseFloat(overallLogLoss.toFixed(4)),
+      overallBaseRate: parseFloat((overallBaseRate * 100).toFixed(1)),
       bestFold: folds.reduce((a, b) => a.wr > b.wr ? a : b),
       worstFold: folds.reduce((a, b) => a.wr < b.wr ? a : b),
       featureImportance: finalModel.getFeatureImportance().slice(0, 10).map(f => ({
@@ -111,7 +117,9 @@ export class WalkForward {
         weight: parseFloat(f.weight.toFixed(4)),
       })),
       foldDetails: folds,
-      modelReady: overallOOSWR > 0.53, // Model is reliable enough to use
+      // Reliable only if it beats the naive "always predict majority class"
+      // baseline by a real margin — not just an absolute 53% floor.
+      modelReady: overallOOSWR > overallBaseRate + 0.03,
     };
 
     // Save log
