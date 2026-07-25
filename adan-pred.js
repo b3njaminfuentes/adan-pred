@@ -3869,10 +3869,14 @@ async function checkResolutions() {
         if (beliefs.length > 0) console.log(`[SOUL v2] 🧠 Auto-consolidated ${beliefs.length} beliefs at trade #${pnl2.trades}`);
       } catch (e) { console.error('[SOUL] Consolidate error:', e.message); }
     }
-    // v8.4: AUTO-DREAM — retrain model + Shapley + ES every 200 trades
-    if (pnl2.trades % 200 === 0 && pnl2.trades > 0) {
+    // v8.4: AUTO-DREAM — retrain model + Shapley + ES every 200 NEW trades.
+    // Delta-based (not % 200): an exact multiple can be skipped forever if the
+    // counter jumps past it, and it stalls silently when the trade rate drops.
+    if (pnl2.trades > 0 && pnl2.trades - (pnl2.lastEvolveTrades || 0) >= 200) {
+      const _prevEvo = pnl2.lastEvolveTrades || 0;
+      pnl2.lastEvolveTrades = pnl2.trades;
       try {
-        console.log(`[AUTO-DREAM] 🧠 Triggering auto-retrain at trade #${pnl2.trades}...`);
+        console.log(`[AUTO-DREAM] 🧠 Triggering auto-retrain at trade #${pnl2.trades} (previous retrain at #${_prevEvo})...`);
         const { walkForward } = await import('./src/ml/walk_forward.js');
         const { shapleyAnalyzer } = await import('./src/ml/shapley_values.js');
         const posData2 = loadPositions();
@@ -4413,6 +4417,12 @@ async function doScan(state) {
       const msg = `⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`;
       console.log(`[CHILD DIRECT] ${msg}`);
       reportTelemetry(`Child Rejected: ${msg}`);
+      // Shadow phase: a capital veto is not an information veto. Ship the view
+      // to Brier anyway — the reporter calibrates it, drops market echoes
+      // (<2pp divergence after calibration) and dedupes one commit per market.
+      // Reputation measures divergence from the market, not win-prob > 50%.
+      const pYesShadow = side === 'YES' ? childProb : 1 - childProb;
+      reportPaperBet({ market: matchingMarket, side, probability: pYesShadow, marketYesPrice: matchingMarket.yesPrice }).catch(() => {});
       continue;
     }
 
@@ -4842,9 +4852,13 @@ async function main() {
       } catch (e) { }
 
       // ── Child Learning: Resolve shadow predictions ──
+      // checkMarketResolution never existed: evaluating it threw a silent
+      // ReferenceError every cycle and NO shadow ever resolved (3330/0 on
+      // 18 jul). Quant-track shadows grade by Binance close price and need no
+      // callback; LLM-track ones simply skip until a real checker exists.
       try {
-        await childLearning.checkResolutions(state.prices || {}, checkMarketResolution);
-      } catch (e) { }
+        await childLearning.checkResolutions(state.prices || {}, null);
+      } catch (e) { console.error('[CHILD LEARNING] checkResolutions failed:', e.message); }
 
       // ── Wilmott v6.0: Persist EWMA state ──
       try { wilmott.saveState(); } catch { }
