@@ -14,9 +14,9 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 53.61,
-        "usurpedBy": "AT1",
-        "usurpedAt": "2026-03-16T17:01:56.562Z",
+        "influence": 45.91,
+        "usurpedBy": "A2",
+        "usurpedAt": "2026-07-20T01:17:23.747Z",
         "dna": {
           "minEdge": 0.0475,
           "volWeight": 1.0829,
@@ -40,7 +40,7 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 77.4,
+        "influence": 91.63,
         "usurpedBy": "S2",
         "usurpedAt": "2026-07-09T08:15:03.904Z",
         "dna": {
@@ -65,7 +65,24 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 53.61
+        "influence": 46.64,
+        "usurpedBy": "A2",
+        "usurpedAt": "2026-07-20T01:30:09.749Z",
+        "dna": {
+          "minEdge": 0.0498,
+          "volWeight": 1.4617,
+          "vwapWeight": 1.1853,
+          "boredBBMin": 0.0054,
+          "stakePct": 0.1613,
+          "patience": 1.5258,
+          "cognitiveStyle": "rsi_reversal",
+          "mutation": 1,
+          "generation": 24,
+          "crossoverFrom": [
+            "ETH-5min",
+            "SOL-15min"
+          ]
+        }
       }
     ],
     "competition": {
