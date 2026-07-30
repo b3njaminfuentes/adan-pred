@@ -17,9 +17,24 @@ import path from 'path';
 
 const LOCK_FILE = 'data/adan.lock';
 if (fs.existsSync(LOCK_FILE)) {
-    const oldPid = fs.readFileSync(LOCK_FILE, 'utf-8');
-    console.error(`[CRITICAL] Ya hay un proceso corriendo (PID ${oldPid}). Matalo antes de levantar uno nuevo.`);
-    process.exit(1);
+    const oldPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8'), 10);
+    let stillAlive = false;
+    if (Number.isFinite(oldPid)) {
+        try {
+            // Signal 0 sends nothing — it just probes whether the PID exists
+            // and is ours to signal. Throws ESRCH if the process is gone.
+            process.kill(oldPid, 0);
+            stillAlive = true;
+        } catch { stillAlive = false; }
+    }
+    if (stillAlive) {
+        console.error(`[CRITICAL] Ya hay un proceso corriendo (PID ${oldPid}). Matalo antes de levantar uno nuevo.`);
+        process.exit(1);
+    }
+    // Stale lock from a process that died without cleaning up (kill -9, OOM,
+    // crash) — the old code trusted the file's mere existence forever, which
+    // is what left this bot unable to restart since the process died.
+    console.error(`[LOCK] PID ${oldPid} in ${LOCK_FILE} is not running — clearing stale lock.`);
 }
 fs.writeFileSync(LOCK_FILE, process.pid.toString());
 process.on('exit', () => {
@@ -4416,7 +4431,7 @@ async function doScan(state) {
     const losses = flipped ? stats.correct : stats.wrong;
     const skill = wilmott.skill.computeSkill(wins, losses);
     if (!skill.isSkilled) {
-      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% not statistically skilled yet (n=${wins + losses}, z=${skill.zScore.toFixed(2)}, need z>1.645 & n≥30)`);
+      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% not statistically skilled yet (n=${wins + losses}, z=${(skill.zScore ?? 0).toFixed(2)}, need z>1.645 & n≥30)`);
       continue;
     }
 
