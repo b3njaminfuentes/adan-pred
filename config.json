@@ -14,22 +14,23 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 43.2,
-        "usurpedBy": "A2",
-        "usurpedAt": "2026-07-20T01:17:23.747Z",
+        "influence": 53.61,
+        "usurpedBy": "AT1",
+        "usurpedAt": "2026-03-16T17:01:56.562Z",
         "dna": {
-          "minEdge": 0.0498,
-          "volWeight": 1.4617,
-          "vwapWeight": 1.1853,
-          "boredBBMin": 0.0054,
-          "stakePct": 0.1613,
-          "patience": 1.5258,
-          "cognitiveStyle": "rsi_reversal",
-          "mutation": 1,
-          "generation": 24,
+          "minEdge": 0.0475,
+          "volWeight": 1.0829,
+          "vwapWeight": 1.97,
+          "boredBBMin": 0.0025,
+          "stakePct": 0.1274,
+          "patience": 0.4592,
+          "cognitiveStyle": "volume_vwap",
+          "mutation": 77,
+          "generation": 88,
+          "rebornFrom": "BNB-1hr",
           "crossoverFrom": [
-            "ETH-5min",
-            "SOL-15min"
+            "BTC-1hr",
+            "BTC-15min"
           ]
         }
       },
@@ -39,7 +40,7 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 94.28,
+        "influence": 77.4,
         "usurpedBy": "S2",
         "usurpedAt": "2026-07-09T08:15:03.904Z",
         "dna": {
@@ -64,24 +65,7 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 44.01,
-        "usurpedBy": "A2",
-        "usurpedAt": "2026-07-20T01:30:09.749Z",
-        "dna": {
-          "minEdge": 0.0498,
-          "volWeight": 1.4617,
-          "vwapWeight": 1.1853,
-          "boredBBMin": 0.0054,
-          "stakePct": 0.1613,
-          "patience": 1.5258,
-          "cognitiveStyle": "rsi_reversal",
-          "mutation": 1,
-          "generation": 24,
-          "crossoverFrom": [
-            "ETH-5min",
-            "SOL-15min"
-          ]
-        }
+        "influence": 53.61
       }
     ],
     "competition": {

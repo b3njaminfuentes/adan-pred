@@ -12,6 +12,32 @@
 //      above BRIER_MIN_EDGE) — 50/50 echoes of the market drag LCB to zero.
 
 import crypto from 'crypto';
+import _fs from 'fs';
+import _os from 'os';
+import _path from 'path';
+
+// ── Empirical calibration for committed probabilities ───────────────────────
+// ADAN's stated confidence runs hot (metacalib multiplier ~0.58: "85% sure"
+// has hit ~52-58% historically). The Brier score rewards the honest posterior,
+// so map the stated bucket to its HISTORICAL hit rate before committing.
+const _METACALIB = _path.join(_os.homedir(), '.adan-pred', 'metacalib.json');
+function calibrateSide(pSide) {
+  try {
+    const mc = JSON.parse(_fs.readFileSync(_METACALIB, 'utf8'));
+    const conf = pSide * 100;
+    const key = conf >= 90 ? '90' : conf >= 80 ? '80' : conf >= 70 ? '70' : '60';
+    const b = mc.buckets && mc.buckets[key];
+    if (b && b.pred >= 20) {
+      // Laplace-smoothed bucket hit rate. Floor at 0.5: a bucket can prove it
+      // carries less information than stated, not that fading ADAN is the play.
+      // Cap at the stated value: calibration only ever removes overconfidence.
+      const acc = (b.correct + 1) / (b.pred + 2);
+      return Math.max(0.5, Math.min(pSide, acc));
+    }
+    const m = typeof mc.multiplier === 'number' ? mc.multiplier : 1;
+    return Math.max(0.5, 0.5 + (pSide - 0.5) * Math.min(1, m));
+  } catch { return pSide }
+}
 
 const BASE = () => process.env.BRIER_URL || 'http://localhost:3000';
 const MIN_EDGE = () => Number(process.env.BRIER_MIN_EDGE ?? 0.005);
@@ -313,33 +339,51 @@ export async function reportPaperBet(bet) {
   }
   const pSide = side === 'NO' ? 1 - pYes : pYes;
 
+  // Rule 2.5: commit the calibrated posterior, never the bravado. The internal
+  // gate already judges calibrated confidence; Brier must see the same honesty.
+  const pCal = calibrateSide(pSide);
+  if (Math.abs(pCal - pSide) > 0.005) {
+    console.log(`[BRIER] 🎯 calibrated p ${(pSide * 100).toFixed(1)}% → ${(pCal * 100).toFixed(1)}% before commit`);
+  }
+  if (pCal <= 0.5) {
+    // Calibration floored the stated confidence to a coin flip: the model is
+    // claiming zero knowledge, so any divergence vs the market is an artifact
+    // of the floor and the side label is arbitrary. No information, no commit.
+    console.log(`[BRIER] ⏭ calibrated to ${(pCal * 100).toFixed(1)}% (coin flip) — no information, skipped`);
+    return
+  }
+
   // Rule 3: a commit that just echoes the market carries no information and
   // drags LCB toward zero. Demand a minimum divergence from the market price.
   const mktYes = typeof bet.marketYesPrice === 'number' ? bet.marketYesPrice
     : typeof market.yesPrice === 'number' ? market.yesPrice : null;
   if (mktYes !== null) {
     const mktSide = side === 'NO' ? 1 - mktYes : mktYes;
-    if (Math.abs(pSide - mktSide) < MIN_EDGE()) {
-      console.log(`[BRIER] ⏭ p=${(pSide * 100).toFixed(1)}% ≈ mkt=${(mktSide * 100).toFixed(1)}% — no signal, skipped`);
+    if (Math.abs(pCal - mktSide) < MIN_EDGE()) {
+      console.log(`[BRIER] ⏭ pCal=${(pCal * 100).toFixed(1)}% ≈ mkt=${(mktSide * 100).toFixed(1)}% — no signal after calibration, skipped`);
       return
     }
   }
 
+  // Mark in-flight BEFORE sending: several children can hit the same market in
+  // one scan, and success-only marking let all of them through (live dupes on
+  // 18 jul). Roll back on failure so a transient error can retry next scan.
+  _committed.set(String(conditionId), Date.now())
   const client = new BrierClient(apiKey, apiSecret, url, botId)
   await client.predict({
     marketId: String(conditionId),
     conditionId: String(conditionId),
     marketTitle: bet.marketTitle || market.title || market.question || 'Unknown Market',
     side,
-    probability: Number(pSide.toFixed(4)),
+    probability: Number(pCal.toFixed(4)),
     liquidity: bet.liquidity || market.liquidity || 0,
-  }).then(() => {
-    _committed.set(String(conditionId), Date.now()) // only on success — a failed commit may retry
   }).catch(() => {
     // BrierClient already printed the error; never crash the trading loop.
+    _committed.delete(String(conditionId))
   })
 }
 
+let _pingTries = 0;
 export async function brierPing() {
   const url = BASE();
   const apiKey = process.env.BRIER_API_KEY;
@@ -363,8 +407,13 @@ export async function brierPing() {
     const client = new BrierClient(apiKey, apiSecret, url, botId);
     await client.ping();
     console.log(`[BRIER] ⚡ Ping sent successfully for ${slug}.`);
+    _pingTries = 0;
   } catch (e) {
-    // Silent
+    // A failed boot ping used to die silently and leave lastPingAt null on
+    // Brier until someone pinged by hand. Log it and retry until it lands.
+    _pingTries++;
+    console.log(`[BRIER] ⚠ ping failed (${e && e.message}) — retry ${_pingTries}/30 in 60s`);
+    if (_pingTries < 30) setTimeout(() => brierPing().catch(() => {}), 60000);
   }
 }
 
