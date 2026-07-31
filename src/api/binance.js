@@ -26,6 +26,29 @@ async function fetchBinanceKlines(symbol, interval = '1m', limit = 20) {
   } catch { return []; }
 }
 
+// Klines for an explicit time window, not just "the last N".
+// Needed to reconstruct what an asset actually did during a trade that has
+// already closed — fetchBinanceKlines() above can only ever look back from
+// *now*, which is useless once the window has passed.
+// startTime/endTime are ms epoch, matching Binance's own convention.
+async function fetchKlineRange(symbol, startTime, endTime, interval = '1m') {
+  try {
+    const url = `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}`
+      + `&startTime=${Math.floor(startTime)}&endTime=${Math.floor(endTime)}&limit=1000`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    if (!Array.isArray(d)) return [];
+    return d.map(c => ({
+      open: parseFloat(c[1]),
+      high: parseFloat(c[2]),
+      low: parseFloat(c[3]),
+      close: parseFloat(c[4]),
+      vol: parseFloat(c[5]),
+      time: c[0],
+    }));
+  } catch { return []; }
+}
+
 // ── Technical Analysis — full suite ─────────────────────────────────────────
 function calcTrend(closes) {
   if (closes.length < 3) return 0;
@@ -190,7 +213,7 @@ function signalLabel(score) {
 }
 
 export {
-  fetchBinancePrice, fetchBinanceKlines, calcTrend, calcVolatility, calcRSI,
+  fetchBinancePrice, fetchBinanceKlines, fetchKlineRange, calcTrend, calcVolatility, calcRSI,
   calcMACD, calcBollingerBands, calcVWAP, calcVolAccel, calcVolumeProfile,
   calcIntelScore, signalLabel
 };
