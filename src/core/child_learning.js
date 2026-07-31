@@ -17,9 +17,22 @@ const MAX_CHILDREN_PER_PARENT = 3;
 const GRANDCHILD_COUNT = 20;           // Ephemeral grandchildren per simulation round
 const GRANDCHILD_SIM_WINDOW = 50;      // Simulate against last N price candles
 const GRANDCHILD_SURVIVAL_TOP = 3;     // Top N grandchildren whose DNA propagates up
-const MIN_PREDICTIONS_FOR_WEIGHT = 3;    // TRAINING: 3 preds to start weighting
-const MIN_PREDICTIONS_FOR_EVOLUTION = 15; // TRAINING: evolve sooner
-const EVOLUTION_INTERVAL = 5;             // TRAINING: evolve every 5 resolved — hyperspeed
+const MIN_PREDICTIONS_FOR_WEIGHT = 3;    // 3 preds to start soft-weighting a child's vote (capped 0.3x-2.0x, not a hard gate — safe at any speed)
+
+// LIVE-mode culling cadence, same switch adan-pred.js already reads (ADAN_MODE,
+// defaults to TRAINING). In TRAINING these stayed at hyperspeed (evolve every 5
+// resolved, cull at 15 samples) for fast local iteration. In LIVE that was a bug,
+// not a feature: with ~11 CHILD_SPECS, EVOLUTION_INTERVAL=5 fired an eviction
+// every ~0.45 predictions per child on average, and MIN_PREDICTIONS_FOR_EVOLUTION=15
+// let a child be culled BEFORE it could ever reach the n>=30 the trading gate
+// itself requires (wilmott.skill.computeSkill, see adan-pred.js CHILD DIRECT
+// loop). No child could out-survive its own eviction — 25,498 lifetime resolved
+// predictions produced at most 4 per strategy. Confirmed via ~/.adan-pred/child_learning.json,
+// 31 jul 2026.
+const isTraining = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING';
+const MIN_PREDICTIONS_FOR_EVOLUTION = isTraining ? 15 : 30;  // never cull a child before it clears the same bar trading requires
+const EVOLUTION_INTERVAL = isTraining ? 5 : 400;             // ~400/11 children ≈ 36 resolutions each between judgments — a real shot at n>=30
+
 const MUTATION_RATE = 0.15;               // TRAINING: 15% mutation — explore more DNA space
 const DIVERSITY_THRESHOLD = 0.80;         // TRAINING: force diversity earlier
 const MIN_PARENT_ACCURACY = 50;           // v4.1: Parents must have >=50% accuracy to reproduce
