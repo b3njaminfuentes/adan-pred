@@ -165,7 +165,25 @@ export async function priceWindow(market) {
   const delta = Math.log(livePrice / startPrice);
   const remainBars = Math.max(remainFresh / barMin, 0.25);
   const z = delta / (sigma * Math.sqrt(remainBars));
-  const pUp = Math.min(0.97, Math.max(0.03, phi(z))); // clamp: model humility
+  const raw = phi(z);
+  const pUp = Math.min(0.97, Math.max(0.03, raw)); // clamp: model humility
+
+  // Refuse to quote when the model has no actual opinion. Both edges of that
+  // are dangerous once a caller subtracts a market price from pUp:
+  //
+  //   z ~ 0    -> pUp ~ 0.50 by default, not by evidence. Against a book at
+  //               0.22/0.24 that reads as a 26-point "edge" produced entirely
+  //               by the model knowing nothing.
+  //   clamped  -> pUp is 0.03/0.97 because the floor says so, not because the
+  //               model believes it. Buying a 2c tail on a floored number is a
+  //               coin flip dressed as conviction.
+  //
+  // Observed both live right after the order-book fix, and they were the
+  // largest apparent edges on the board — which is exactly the trap: the
+  // biggest numbers came from the least informative outputs.
+  const MIN_ABS_Z = 0.15;                       // below this there is no signal
+  const clamped = raw < 0.03 || raw > 0.97;
+  if (clamped || Math.abs(z) < MIN_ABS_Z) return null;
 
   return { pUp, z, delta, sigma, barMin, remainMin: remainFresh, startPrice, livePrice };
 }
