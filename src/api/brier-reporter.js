@@ -137,7 +137,14 @@ export async function refreshMyBrierScore() {
         brier: latest.brierScore,
         winRate: latest.winRate,
         totalTrades: latest.totalTrades,
-        // The REAL graduation gate: LCB of skill vs market, not raw Brier.
+        // LCB and days are quality signals, NOT gates. Since 30 jul 2026 the
+        // vault opens on a single condition: 100 resolved predictions
+        // (MIN_RESOLVED_FOR_VAULT in brier-protocol's src/lib/incubation.ts).
+        // LCB and time-alive still get measured and shown because they drive
+        // the reputation tier — which raises the capital ceiling — but they
+        // no longer block access. This readout used to print "lcb>0 ✗,
+        // 13/21d" next to the word "gate", which told the operator the bot
+        // was blocked when it had in fact already qualified.
         lcb: latest.lcb ?? null,
         reputation: latest.reputationScore ?? null,
         resolved,
@@ -145,13 +152,12 @@ export async function refreshMyBrierScore() {
         status: bot.status,
         gate: {
           resolvedPass: resolved >= 100,
-          lcbPass: latest.lcb != null && latest.lcb > 0,
-          daysPass: daysLive >= 21,
         },
       };
       _scoreFetchedAt = Date.now();
-      const g = _scoreCache.gate;
-      console.log(`[BRIER] 🧠 rep=${_scoreCache.reputation ?? '—'} lcb=${_scoreCache.lcb != null ? _scoreCache.lcb.toFixed(4) : '—'} brier=${latest.brierScore?.toFixed(4)} | gate: ${resolved}/100 resolved${g.resolvedPass ? ' ✓' : ''}, lcb>0${g.lcbPass ? ' ✓' : ' ✗'}, ${daysLive}/21d${g.daysPass ? ' ✓' : ''} | ${bot.status}`);
+      const vaultOpen = _scoreCache.gate.resolvedPass;
+      const lcbStr = _scoreCache.lcb != null ? _scoreCache.lcb.toFixed(4) : '—';
+      console.log(`[BRIER] 🧠 rep=${_scoreCache.reputation ?? '—'} brier=${latest.brierScore?.toFixed(4)} | vault: ${resolved}/100 resueltas ${vaultOpen ? '✓ HABILITADO' : '✗ falta volumen'} | tier: lcb=${lcbStr}, ${daysLive}d activo | ${bot.status}`);
     }
     return _scoreCache;
   } catch (e) {
