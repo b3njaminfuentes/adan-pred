@@ -4642,11 +4642,27 @@ async function doScan(state) {
       const realBook = await getRealOrderBook(m.conditionId);
       if (!realBook) continue;
 
-      const side = g.pUp >= 0.5 ? 'YES' : 'NO';
+      // Pick the side the EDGE is on, not the side the model merely favours.
+      //
+      // This used to be `g.pUp >= 0.5 ? 'YES' : 'NO'` — which side the model
+      // thinks is more likely, with no reference to what either side costs.
+      // Those are different questions, and conflating them threw away the
+      // largest opportunities. Real example: GAUSS priced a daily BTC market
+      // at pUp=61.1% while the book asked 72.5% for YES. Buying YES is
+      // -11.4% (paying 72.5 for something worth 61.1); buying NO is +11.4%
+      // (paying 27.5 for something worth 38.9). The old rule saw pUp>0.5,
+      // chose YES, computed a negative edge and skipped — declining a
+      // double-digit edge because the model happened to lean the other way.
+      //
+      // Correct rule: buy YES when the model is above the ask, buy NO when it
+      // is below the bid, and take whichever of the two is larger.
+      const edgeYes = g.pUp - realBook.bestAsk;              // pay ask for YES
+      const edgeNo = realBook.bestBid - g.pUp;               // (1-pUp) - (1-bestBid)
+      const side = edgeYes >= edgeNo ? 'YES' : 'NO';
       const pSide = side === 'YES' ? g.pUp : 1 - g.pUp;
-      
+
       const exec = side === 'YES' ? realBook.bestAsk : (1 - realBook.bestBid);
-      const edge = pSide - exec;
+      const edge = Math.max(edgeYes, edgeNo);
       const netEdge = edge - FEES_SLIPPAGE; // fees; spread already inside exec via calculateEdge equivalent
       if (netEdge < 0.03) continue;
       
