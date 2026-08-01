@@ -4636,16 +4636,27 @@ async function doScan(state) {
       } catch { return null; }
   }
 
+  // Health telemetry for the external watchdog (scripts/health_watchdog.js).
+  // gaussBookFailures/gaussBookAttempts exists specifically to catch a repeat
+  // of the 10-31 jul incident: getRealOrderBook returned null on 100% of
+  // calls for three weeks (wrong CLOB query param) with zero error in the
+  // logs, because a null book just means "skip this market" to the code
+  // reading it. A failure RATE near 100% over many attempts is the signature
+  // that would have caught it on cycle one instead of three weeks later.
+  let gaussBookAttempts = 0, gaussBookFailures = 0, gaussPriced = 0;
+
   try {
     const gaussCandidates = [];
     for (const m of tradeableMarkets) {
       if (childTradedMarkets.has(m.id || m.conditionId)) continue;
-      
+
       const g = await priceWindow(m);
       if (!g) continue;
-      
+      gaussPriced++;
+
+      gaussBookAttempts++;
       const realBook = await getRealOrderBook(m);
-      if (!realBook) continue;
+      if (!realBook) { gaussBookFailures++; continue; }
 
       // Pick the side the EDGE is on, not the side the model merely favours.
       //
@@ -4698,6 +4709,23 @@ async function doScan(state) {
       console.log(`[GAUSS] 📐 ${gaussCandidates.length} candidate(s) priced above threshold this cycle`);
     }
   } catch (gErr) { console.log('[GAUSS] error:', gErr.message); }
+
+  // Write health snapshot every cycle, unconditionally — the watchdog reads
+  // this file's mtime to know ADAN is alive and cycling, and its contents to
+  // know GAUSS can actually reach the order book, independent of anything
+  // ADAN's own logs claim.
+  try {
+    fs.mkdirSync(DIR, { recursive: true });
+    const health = {
+      ts: Date.now(),
+      pid: process.pid,
+      gaussMarketsPriced: gaussPriced,
+      gaussBookAttempts,
+      gaussBookFailures,
+      gaussBookFailRate: gaussBookAttempts > 0 ? gaussBookFailures / gaussBookAttempts : null,
+    };
+    fs.writeFileSync(path.join(DIR, 'health.json'), JSON.stringify(health));
+  } catch (e) { console.error('[HEALTH] write error:', e.message); }
 
   // 4. ORACLE PARKED (default). The Gemini oracle brain executed 0 of the
   // first 91 real trades (all came from CHILD DIRECT) while consuming ~670
