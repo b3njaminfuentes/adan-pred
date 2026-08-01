@@ -88,6 +88,78 @@ class TripleBarrier {
     return { hit, label, pnl, barsElapsed: b.barsElapsed };
   }
 
+  // Path-aware labeling — the actual López de Prado formulation.
+  //
+  // labelTrade() below only ever compares the FINAL price to the barriers,
+  // which defeats the purpose: a trade that ran to take-profit mid-window and
+  // then gave it all back gets scored identically to one that never moved.
+  // The whole point of the triple barrier is *which barrier is touched
+  // first* along the path. This walks the real OHLC bars in order.
+  //
+  // `bars` is [{high, low, close}, ...] in chronological order (Binance
+  // klines shape). `entryPrice` and the bars must be the SAME instrument —
+  // the underlying asset price (BTC/ETH/SOL), not the Polymarket
+  // probability, which has no meaningful volatility barriers.
+  // `opts.record` (default true) controls whether the result is folded into
+  // this instance's running stats and flushed to disk. The backfill script
+  // passes false: it recomputes thousands of historical labels and must not
+  // interleave writes with the live bot, which is labelling new resolutions
+  // into the same file at the same time.
+  labelFromPath(entryPrice, bars, side, volatility, opts = {}) {
+    const record = opts.record !== false;
+    if (!entryPrice || !Array.isArray(bars) || bars.length === 0) return null;
+
+    const vol = Math.max(volatility || 0.2, 0.01);
+    const isLong = side === 'YES' || side === 'BUY' || side === 'LONG' || side === 'UP';
+    const upper = entryPrice * (1 + this.tpMult * vol / 100);
+    const lower = entryPrice * (1 - this.slMult * vol / 100);
+
+    const pnlAt = (px) => isLong
+      ? (px - entryPrice) / entryPrice * 100
+      : (entryPrice - px) / entryPrice * 100;
+
+    for (let i = 0; i < bars.length && i < this.maxBars; i++) {
+      const b = bars[i];
+      const touchedUpper = b.high >= upper;
+      const touchedLower = b.low <= lower;
+
+      // Both barriers inside one bar: OHLC alone cannot say which came
+      // first. Resolve pessimistically (assume the adverse one hit first) —
+      // the standard anti-optimism convention in backtesting. Being wrong
+      // in this direction costs a missed win in the label; being wrong the
+      // other way would teach the bot it escapes losses it actually took.
+      if (touchedUpper && touchedLower) {
+        const label = -1;
+        const hit = 'sl';
+        const pnl = pnlAt(isLong ? lower : upper);
+        if (record) this._recordResult(hit, label, pnl);
+        return { label, hit, pnl, barsToTouch: i + 1, ambiguousBar: true };
+      }
+      if (touchedUpper) {
+        const label = isLong ? 1 : -1;
+        const hit = isLong ? 'tp' : 'sl';
+        const pnl = pnlAt(upper);
+        if (record) this._recordResult(hit, label, pnl);
+        return { label, hit, pnl, barsToTouch: i + 1, ambiguousBar: false };
+      }
+      if (touchedLower) {
+        const label = isLong ? -1 : 1;
+        const hit = isLong ? 'sl' : 'tp';
+        const pnl = pnlAt(lower);
+        if (record) this._recordResult(hit, label, pnl);
+        return { label, hit, pnl, barsToTouch: i + 1, ambiguousBar: false };
+      }
+    }
+
+    // Vertical barrier: neither level reached before the window closed.
+    // This is the honest "the move was not decisive" bucket — genuinely
+    // different information from a win or a loss.
+    const lastClose = bars[Math.min(bars.length, this.maxBars) - 1].close;
+    const pnl = pnlAt(lastClose);
+    if (record) this._recordResult('time', 0, pnl);
+    return { label: 0, hit: 'time', pnl, barsToTouch: null, ambiguousBar: false };
+  }
+
   // Post-hoc labeling for historical trades
   labelTrade(entryPrice, exitPrice, side, barsHeld, volatility) {
     if (!entryPrice || !exitPrice) return { label: 0, hit: 'time' };

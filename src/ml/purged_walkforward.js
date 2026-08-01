@@ -53,11 +53,17 @@ class PurgedWalkForward {
       const testStart = i * foldSize;
       const testEnd = Math.min(testStart + foldSize, n);
 
-      // Purge: remove samples near boundary
+      // Purge: drop samples right before the test fold — their labels can
+      // still be resolving over a window that bleeds into the test period.
       const trainEnd = Math.max(0, testStart - this.purgeLength);
 
-      // Embargo: skip samples after test fold
-      const trainData = sorted.slice(0, trainEnd);
+      // Embargo: this.embargoLength was declared but never applied — training
+      // data from LATER folds could still include samples right after this
+      // fold's test period, whose labels formed while info from the test
+      // period was already public. Skip forward past the embargo before
+      // resuming training data for anything beyond this fold's test window.
+      const embargoEnd = Math.min(n, testEnd + this.embargoLength);
+      const trainData = sorted.slice(0, trainEnd).concat(sorted.slice(embargoEnd));
       const testData = sorted.slice(testStart, testEnd);
 
       if (trainData.length < 30 || testData.length < 10) continue;

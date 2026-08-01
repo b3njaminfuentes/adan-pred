@@ -165,6 +165,9 @@ import { vpinTracker } from './src/ml/vpin.js';
 import { tripleBarrier } from './src/ml/triple_barrier.js';
 import { purgedWF } from './src/ml/purged_walkforward.js';
 import { resolutionOracle } from './src/ml/resolution_oracle.js';
+import { multiplierAudit } from './src/ml/multiplier_audit.js';
+import { getTradePath } from './src/ml/price_path.js';
+import { pathStats } from './src/ml/path_stats.js';
 
 // ── Orphan Check ────────────────────────────────────────────────────────────
 try {
@@ -2414,7 +2417,11 @@ async function think(markets, prices, pnl, openPos, state) {
       shadowCtx: adanShadow.getPromptWarning(),
       cusumCtx: cusumFilter.getPromptContext(),
       vpinCtx: vpinTracker.getPromptContext(),
-      tripleBarrierCtx: tripleBarrier.getPromptContext(),
+      // Global barrier stats, then the per-strategy breakdown underneath —
+      // the aggregate hides that some strategies win by calling direction and
+      // others only by prices reverting before expiry.
+      tripleBarrierCtx: [tripleBarrier.getPromptContext(), pathStats.getPromptContext()]
+        .filter(Boolean).join('\n\n'),
       walkForwardCtx: purgedWF.getPromptContext(),
       resOracleCtx: resolutionOracle.getPromptContext(),
       onStatus: (msg) => {
@@ -3196,17 +3203,32 @@ Reply ONLY JSON: {"bet": true|false, "sizeMult": 0.5-1.0, "edge_after_spread": <
   // v9.0: Scenario Forecaster — "Third Eye" Kelly multiplier
   const forecastMult = scenarioForecaster.getKellyMultiplier();
   const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult * cusumMult * vpinMult * purgedWFMult * forecastMult);
+  // Instrumentation only (no behavior change): 15 independent multipliers
+  // chained together have never been validated jointly. Log each one now so
+  // that once enough trades resolve, we can check which actually correlate
+  // with win rate vs. which are just adding compounding noise to every stake.
+  multiplierAudit.record(
+    { humanMult, sessionMult, metabolicMult, particleStakeAdj, copulaStakeAdj, wilmottStakeMult, ivStakeMult, timeDecayMult, kmeansRegimeMult, hourBinMult, metaLabelMult, cusumMult, vpinMult, purgedWFMult, forecastMult, combined },
+    { asset: market?.asset, childSpec: decision?._childSpec || null, edge: decision?.edge || 0 }
+  );
   // Probation flat ticket is exempt from the training floor; otherwise min $100.
   let stake = ddProbation ? 25 : Math.round(Math.max(100, baseStake * combined) / 25) * 25;
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
   if (decision._childDirect) {
+    // BUG FIX: the old formula (edge / (edge*(1-edge))) ignored market price
+    // entirely, so it couldn't tell a 3% edge at 50¢ from a 3% edge at 90¢ —
+    // very different correct bet sizes. It also saturated past 100% "full
+    // Kelly" for almost any edge above ~2%, so every child-direct trade got
+    // sized the same regardless of how strong its edge was. Reuse the
+    // correctly-derived odds-aware formula from kelly_sizer.js instead.
     const edge = decision.edge || 0.01; // was 0.05 — don't gift free edge to child trades
-    const variance = edge * (1 - edge); // Bernoulli variance for binary outcome
-    const fullKelly = variance > 0 ? edge / variance : 0;
-    const halfKelly = fullKelly / 2;
+    const modelProb = decision.pSide ?? decision.myProb ?? (0.5 + edge / 2);
+    const marketPrice = Math.min(0.99, Math.max(0.01, modelProb - (edge + FEES_SLIPPAGE)));
     const fund = pnlNow.fund || 5000;
-    const rawChildStake = Math.round(fund * halfKelly / 100) * 25;
+    const kellyResult = kellySizer.compute({ modelProb, marketPrice, fund });
+    const fullKelly = kellyResult.kellyFull;
+    const rawChildStake = kellyResult.stake;
     // Apply copula correlation penalty (already calculated above)
     const childStakeWithCopula = Math.round(rawChildStake * copulaStakeAdj / 25) * 25;
     stake = Math.min(300, Math.max(50, childStakeWithCopula));
@@ -3788,13 +3810,52 @@ async function checkResolutions() {
       } catch (e) { console.error('[UCB] Record error:', e.message); }
     } catch (e) { console.log('[ML-ONLINE] Error:', e.message); }
 
-    // Concept #20A: Triple Barrier — label the resolved trade
+    // Concept #20A: Triple Barrier — label the resolved trade against the
+    // REAL underlying price path.
+    //
+    // This used to synthesise `exitP = won ? entry*1.01 : entry*0.99` off the
+    // binary outcome and compare it to barriers on the Polymarket
+    // probability. That was doubly broken: the ±1% carried no market
+    // information (every win looked identical), and it could never reach a
+    // ±2%·vol barrier — hence 1846 labels of which TP:0 SL:0 TIME:1846.
+    // Now we pull the actual BTC/ETH/SOL klines for the window and walk them
+    // bar by bar to find which barrier was touched FIRST, which is the whole
+    // point of the method. If the real path can't be fetched we skip the
+    // label entirely — a missing label is honest, a fabricated one poisons
+    // every model downstream that trains on it.
     try {
-      const entryP = p.entryPrice || p.marketPrice || 0.5;
-      const exitP = won ? entryP * 1.01 : entryP * 0.99; // approximation from binary outcome
-      const vol = p.entryVec?.[3] || 1; // volatility from feature vector
-      const tbLabel = tripleBarrier.labelTrade(entryP, exitP, p.side, p.barsHeld || 5, vol);
-      if (tbLabel) p._tripleBarrierLabel = tbLabel.label;
+      const tradePath = await getTradePath(p);
+      if (tradePath) {
+        const tbLabel = tripleBarrier.labelFromPath(tradePath.entryPrice, tradePath.bars, p.side, tradePath.volPct);
+        if (tbLabel) {
+          p._tripleBarrierLabel = tbLabel.label;
+          p._tripleBarrierHit = tbLabel.hit;
+          console.log(`[TRIPLE-BARRIER] ${tradePath.symbol} ${p.side} → ${tbLabel.hit.toUpperCase()} (label ${tbLabel.label}, ${tbLabel.pnl.toFixed(3)}% on underlying, vol=${tradePath.volPct.toFixed(3)}%${tbLabel.barsToTouch ? `, touched at bar ${tbLabel.barsToTouch}` : ''})`);
+          // Keep the per-strategy path dataset growing from live trading
+          // instead of freezing at the backfill snapshot. Same row shape the
+          // backfill writes, so both sources stay directly comparable.
+          pathStats.append({
+            id: p.id || p.featureTradeId || null,
+            ts: new Date(p.entryTime).getTime(),
+            entryTime: p.entryTime,
+            asset: (p.asset || '').toLowerCase(),
+            symbol: tradePath.symbol,
+            windowMin: Number(p.windowMin) || 5,
+            childSpec: p.childSpec || null,
+            side: p.side,
+            won,
+            label: tbLabel.label,
+            hit: tbLabel.hit,
+            pathPnlPct: Number(tbLabel.pnl.toFixed(4)),
+            barsToTouch: tbLabel.barsToTouch,
+            ambiguousBar: tbLabel.ambiguousBar,
+            volPct: Number(tradePath.volPct.toFixed(4)),
+            underlyingEntry: tradePath.entryPrice,
+            confidence: p.confidence ?? null,
+            edge: p.edge ?? null,
+          });
+        }
+      }
     } catch (e) { console.error('[TRIPLE-BARRIER] Label error:', e.message); }
 
     // Concept #20C: Purged Walk-Forward — add training sample
@@ -4661,7 +4722,10 @@ async function doScan(state) {
   }
 
   // ── Concept #20E: Meta-Labeler Gate ──
-  if (decision.action === 'BET' && decision.market && metaLabeler.isReady()) {
+  // No isReady() here on purpose — see the comment below on the bootstrap
+  // deadlock. Features are collected on every bet; the model only acts once
+  // it has been trained on them.
+  if (decision.action === 'BET' && decision.market) {
     const mktData = decision.market.priceData || {};
     const metaFeatures = {
       primary_confidence: (decision.confidence || 50) / 100,
@@ -4676,18 +4740,38 @@ async function doScan(state) {
       dynasty_consensus: decision._dynastyConsensus || 0.5,
       taker_ratio: mktData.futuresSignals?.takerRatio || 1,
       oi_delta: mktData.futuresSignals?.oiDelta5m || 0,
+      // This strategy's own track record of moving the underlying its way
+      // (%TP − %SL). Built only from already-resolved trades, so it is
+      // available at entry. Gives the meta-labeler a way to distinguish a
+      // strategy with real directional skill from one whose wins depend on
+      // prices reverting before expiry — two very different risk profiles
+      // that a raw win rate collapses into the same number.
+      directional_edge: pathStats.getDirectionalEdge(decision._childSpec),
     };
-    const metaPred = metaLabeler.predict(metaFeatures);
-    if (metaPred.action === 'VETO') {
-      console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — primary model likely wrong`);
-      decision = { ...decision, action: 'SKIP', thought: `⛔ META-LABEL VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}%. ${decision.thought || ''}` };
-    } else if (metaPred.action === 'REDUCE') {
-      console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — reducing stake 40%`);
-      decision._metaStakeReduction = 0.6;
-      decision.thought = (decision.thought || '') + `\n⚠️ META-LABEL: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — stake ×0.6`;
-    }
-    // Save metaFeatures on decision for resolution training
+    // Always attach the features, regardless of whether the model is ready.
+    // This block used to be gated entirely on metaLabeler.isReady(), which
+    // deadlocked the model permanently: features were only built when ready,
+    // ready required 200 training samples, samples only grew from trades that
+    // carried features. Nothing could ever break the cycle, which is why
+    // meta_labeler.json did not exist after 2223 resolved trades — the whole
+    // veto/reduce layer has been inert since it was written. Collecting
+    // features costs nothing and is what lets it bootstrap.
     decision._metaFeatures = metaFeatures;
+
+    // Only ACT on the prediction once the model has actually been trained.
+    // An untrained model returns a flat 0.5 for everything; letting that
+    // drive vetoes would be noise wearing a confidence interval.
+    if (metaLabeler.isReady()) {
+      const metaPred = metaLabeler.predict(metaFeatures);
+      if (metaPred.action === 'VETO') {
+        console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — primary model likely wrong`);
+        decision = { ...decision, action: 'SKIP', thought: `⛔ META-LABEL VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}%. ${decision.thought || ''}` };
+      } else if (metaPred.action === 'REDUCE') {
+        console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — reducing stake 40%`);
+        decision._metaStakeReduction = 0.6;
+        decision.thought = (decision.thought || '') + `\n⚠️ META-LABEL: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — stake ×0.6`;
+      }
+    }
   }
 
   // v9.0: Scenario Forecaster — simulate 3 scenarios before every trade

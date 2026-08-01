@@ -24,6 +24,12 @@ const META_FEATURES = [
   'dynasty_consensus',     // 0-1, what % of children agreed
   'taker_ratio',           // from futures intel
   'oi_delta',              // from futures intel
+  // %TP − %SL over this strategy's own past resolved trades, measured on the
+  // underlying price path (see path_stats.js). Positive means the asset
+  // actually moved its way more often than against it; negative means its
+  // wins lean on prices reverting before expiry. Computed strictly from
+  // already-resolved history, so it is known at entry — no look-ahead.
+  'directional_edge',
 ];
 const N_META = META_FEATURES.length;
 
@@ -270,14 +276,46 @@ class MetaLabeler {
     try {
       if (fs.existsSync(META_PATH)) {
         const data = JSON.parse(fs.readFileSync(META_PATH, 'utf8'));
-        if (data.weights) this.weights = new Float64Array(data.weights);
-        if (data.mean) this.mean = new Float64Array(data.mean);
-        if (data.std) this.std = new Float64Array(data.std);
-        this.bias = data.bias || 0;
-        this.samples = data.samples || [];
-        this.trained = data.trained || false;
-        this.trainedAt = data.trainedAt || null;
-        this.lastTrainSamples = data.lastTrainSamples || 0;
+
+        // Feature-count migration. When META_FEATURES grows, a saved weight
+        // vector is one element short: predict() would read past its end,
+        // get undefined, and quietly return NaN for every probability —
+        // silently disabling the veto/reduce logic with no error anywhere.
+        // Old weights are discarded (they were fitted on a different feature
+        // space and cannot be extended meaningfully), but the SAMPLES are
+        // kept and padded with 0 for the new feature. 0 is the neutral value
+        // for directional_edge, which is honest: those trades genuinely had
+        // no such measurement at the time. Retraining then refits on the
+        // full history rather than throwing away thousands of observations.
+        const savedLen = Array.isArray(data.weights) ? data.weights.length : 0;
+        const dimensionChanged = savedLen > 0 && savedLen !== N_META;
+
+        if (dimensionChanged) {
+          console.log(`[META-LABELER] Feature set changed (${savedLen} → ${N_META}). Discarding old weights, padding ${(data.samples || []).length} samples, will retrain.`);
+          this.weights = new Float64Array(N_META).fill(0);
+          this.bias = 0;
+          this.trained = false;
+          this.lastTrainSamples = 0;
+        } else {
+          if (data.weights) this.weights = new Float64Array(data.weights);
+          if (data.mean) this.mean = new Float64Array(data.mean);
+          if (data.std) this.std = new Float64Array(data.std);
+          this.bias = data.bias || 0;
+        }
+
+        this.samples = (data.samples || []).map(s => {
+          const f = Array.isArray(s.features) ? s.features.slice(0, N_META) : [];
+          while (f.length < N_META) f.push(0);
+          return { ...s, features: f };
+        });
+        // Only restore the trained flag when the feature space is unchanged.
+        // After a dimension change the weights above were deliberately reset,
+        // so claiming trained=true would leave an all-zero model advertising
+        // itself as ready — every predict() would return exactly 0.5 and the
+        // veto logic would look functional while doing nothing.
+        this.trained = dimensionChanged ? false : (data.trained || false);
+        this.trainedAt = dimensionChanged ? null : (data.trainedAt || null);
+        this.lastTrainSamples = dimensionChanged ? 0 : (data.lastTrainSamples || 0);
         this.totalPredictions = data.totalPredictions || 0;
         this.correctPredictions = data.correctPredictions || 0;
         this.vetoes = data.vetoes || 0;
