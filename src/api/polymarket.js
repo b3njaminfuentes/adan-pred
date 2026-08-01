@@ -3,26 +3,35 @@ import dns from 'dns';
 import https from 'https';
 import { promisify } from 'util';
 
-// ISP blocks gamma-api.polymarket.com at resolver level — bypass via 1.1.1.1
+// ISP blocks polymarket.com at resolver level — bypass via 1.1.1.1.
+// The block hits BOTH hosts, not just gamma: a plain fetch to
+// clob.polymarket.com from the dev machine returns HTTP 000 in ~1.6ms
+// (connection refused before any request goes out), while the same call
+// through this bypass answers 200 in ~65ms.
 dns.setServers(['1.1.1.1', '8.8.8.8']);
 const resolve4 = promisify(dns.resolve4);
 const POLY_HOST = 'gamma-api.polymarket.com';
-let _polyIP = null;
+const CLOB_HOST = 'clob.polymarket.com';
+const _ipCache = new Map();
+const _ipFallback = { [POLY_HOST]: '104.18.34.205' };
 
-async function getPolyIP() {
-  if (_polyIP) return _polyIP;
-  try { _polyIP = (await resolve4(POLY_HOST))[0]; }
-  catch { _polyIP = '104.18.34.205'; }
-  return _polyIP;
+async function getHostIP(host) {
+  if (_ipCache.has(host)) return _ipCache.get(host);
+  let ip;
+  try { ip = (await resolve4(host))[0]; }
+  catch { ip = _ipFallback[host] || null; }
+  if (!ip) throw new Error(`cannot resolve ${host}`);
+  _ipCache.set(host, ip);
+  return ip;
 }
 
 // ── Polymarket helpers ───────────────────────────────────────────────────────
-function httpsGet(ip, path) {
+function httpsGet(ip, path, host) {
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: ip, port: 443, path, method: 'GET',
-      servername: POLY_HOST,
-      headers: { Host: POLY_HOST, Accept: 'application/json' },
+      servername: host,
+      headers: { Host: host, Accept: 'application/json' },
       timeout: 8000,
     }, res => {
       let data = '';
@@ -35,12 +44,49 @@ function httpsGet(ip, path) {
   });
 }
 
-async function polyFetch(endpoint) {
+async function polyFetch(endpoint, host = POLY_HOST) {
   try {
-    const ip = await getPolyIP();
+    const ip = await getHostIP(host);
     const path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
-    return await httpsGet(ip, path);
+    return await httpsGet(ip, path, host);
   } catch { return null; }
+}
+
+/**
+ * Best bid/ask for ONE outcome token, straight from the CLOB.
+ *
+ * Two bugs lived in the previous caller (getRealOrderBook in adan-pred.js):
+ *
+ *  1. It queried `/book?market=<conditionId>`. The endpoint wants a token id
+ *     and answers `HTTP 400 {"error":"Invalid token id"}` to a condition id —
+ *     verified live. res.ok was therefore always false, the function always
+ *     returned null, and the GAUSS block's `if (!realBook) continue` skipped
+ *     every market. GAUSS placed 597 trades on 10 Jul and exactly zero from
+ *     17:12 that day onward; it has been blind for three weeks.
+ *  2. It used a bare fetch(), which cannot reach polymarket.com from a
+ *     network where the resolver blocks it.
+ *
+ * `bestBid`/`bestAsk` are quoted for the token asked about. Buying the
+ * opposite outcome costs 1 - bestBid, which is what the caller derives.
+ */
+export async function fetchTokenBook(tokenId) {
+  if (!tokenId) return null;
+  const book = await polyFetch(`/book?token_id=${tokenId}`, CLOB_HOST);
+  if (!book || !Array.isArray(book.bids) || !Array.isArray(book.asks)) return null;
+  // The CLOB returns each side ascending by price, so the best bid (highest)
+  // and best ask (lowest) sit at opposite ends. Scan rather than assume.
+  let bestBid = null, bidSize = 0;
+  for (const b of book.bids) {
+    const p = parseFloat(b.price);
+    if (Number.isFinite(p) && (bestBid === null || p > bestBid)) { bestBid = p; bidSize = parseFloat(b.size) || 0; }
+  }
+  let bestAsk = null, askSize = 0;
+  for (const a of book.asks) {
+    const p = parseFloat(a.price);
+    if (Number.isFinite(p) && (bestAsk === null || p < bestAsk)) { bestAsk = p; askSize = parseFloat(a.size) || 0; }
+  }
+  if (bestBid === null || bestAsk === null) return null;
+  return { bestBid, bestAsk, bidLiquidity: bidSize, askLiquidity: askSize };
 }
 
 // Keywords that identify crypto price markets

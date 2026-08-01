@@ -87,7 +87,7 @@ import {
 } from './src/api/binance.js';
 
 import {
-  polyFetch, fetchPolymarkets, applyParticleFilter, normalizePolymarket,
+  polyFetch, fetchTokenBook, fetchPolymarkets, applyParticleFilter, normalizePolymarket,
   expit, logit, classifyMarket, checkMarketResolution
 } from './src/api/polymarket.js';
 
@@ -4617,17 +4617,22 @@ async function doScan(state) {
   // Closed-form P(UP) from (move so far, time left, realized vol) vs the
   // EXECUTABLE quote. This is the latency-edge thesis as a pricing model,
   // not TA. Runs through the same evaluate_and_trade gates as everything.
-  async function getRealOrderBook(marketId) {
+  // Live book for a market's YES token. Takes the market (not a bare id) so it
+  // can reach clobTokenIds — the CLOB keys books by outcome token, and the old
+  // `/book?market=<conditionId>` call answered HTTP 400 "Invalid token id" on
+  // every request. That made this return null every time, and the GAUSS block
+  // below skips any market without a book: GAUSS placed 597 trades on 10 Jul
+  // and none after 17:12 that day. Three weeks blind, on the one engine that
+  // was actually winning (78-80% hit rate vs 38-60% for the child strategies).
+  // Also routes through polymarket.js's DNS bypass — a plain fetch to
+  // clob.polymarket.com fails outright on a network whose resolver blocks it.
+  async function getRealOrderBook(market) {
       try {
-          const res = await fetch(`https://clob.polymarket.com/book?market=${marketId}`);
-          if (!res.ok) return null;
-          const book = await res.json();
-          return {
-              bestBid: parseFloat(book.bids?.[0]?.price ?? 0),
-              bestAsk: parseFloat(book.asks?.[0]?.price ?? 1),
-              bidLiquidity: book.bids?.[0]?.size ?? 0,
-              askLiquidity: book.asks?.[0]?.size ?? 0
-          };
+          const raw = market?.clobTokenIds;
+          const ids = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          const yesToken = Array.isArray(ids) ? ids[0] : null;
+          if (!yesToken) return null;
+          return await fetchTokenBook(yesToken);
       } catch { return null; }
   }
 
@@ -4639,7 +4644,7 @@ async function doScan(state) {
       const g = await priceWindow(m);
       if (!g) continue;
       
-      const realBook = await getRealOrderBook(m.conditionId);
+      const realBook = await getRealOrderBook(m);
       if (!realBook) continue;
 
       // Pick the side the EDGE is on, not the side the model merely favours.
