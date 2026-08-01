@@ -4126,11 +4126,19 @@ async function doScan(state) {
   // 2. Fetch Polymarket markets — gated by config.venues.polymarket
   state.status = 'Fetching Polymarket markets...'; render(state);
   const rawMkts = (config?.venues?.polymarket === false) ? [] : await fetchPolymarkets(strat);
-  // FOCUS: crypto up/down 5-15min only. Anything without a positively-parsed
-  // 5 or 15 minute window (hourly, 4h, daily, unparseable) is out of scope.
+  // FOCUS: crypto up/down, now across every horizon the pricer supports.
+  //
+  // This used to be `windowMin === 5 || windowMin === 15`. Measured against
+  // real Binance price paths over 2,612 decisive moves, those two windows sit
+  // at 50.2% and 46.8% directional accuracy — coin flips, and ~2pp of fees
+  // below break-even. They are also nearly empty: a 5-minute BTC market
+  // carries $15-47 of volume while the daily one carries ~$94k. The hourly
+  // and daily markets have never been priced once, so their edge is unknown
+  // rather than disproven. Widening the funnel is what makes it knowable.
+  const HORIZONS = [5, 15, 60, 240, 1440];
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices))
     .filter(m => m && m.id && m.title)
-    .filter(m => m.windowMin === 5 || m.windowMin === 15);
+    .filter(m => HORIZONS.includes(m.windowMin));
 
   // 2.05 Polymarket WebSocket: subscribe to all active market token IDs
   try {

@@ -241,6 +241,13 @@ function normalizePolymarket(raw, prices = {}) {
     windowMin = 60;
   } else if (/\b4:00PM-8:00PM\b|\b8:00PM-12:00AM\b/.test(title)) {
     windowMin = 240;
+  } else if (/up or down on \w+ \d+/i.test(title)) {
+    // Daily Up-or-Down ("Bitcoin Up or Down on August 1?"). Same question the
+    // 5-minute markets ask, resolved over a full day — and with real volume:
+    // ~$94k on a daily BTC vs $15-47 on the 5-minute windows ADAN was
+    // trading. Never priced before because the title carries no explicit
+    // clock range, so windowMin stayed null and the funnel dropped it.
+    windowMin = 1440;
   }
   // No default: a title that doesn't positively declare its window stays
   // windowMin=null and is excluded by the strict 5/15min funnel downstream.
