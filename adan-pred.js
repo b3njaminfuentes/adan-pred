@@ -2770,6 +2770,57 @@ async function evaluate_and_trade(decision, prices, state) {
     }
   }
 
+  // ── Concept #20E: Meta-Labeler Gate ──
+  // Moved here from doScan() on 2 aug, where it lived AFTER the
+  // `ADAN_ORACLE !== 'on'` early return — dead code every single cycle,
+  // because the oracle brain is parked by default and real trades (child-
+  // direct, GAUSS) call evaluate_and_trade() directly without ever reaching
+  // that point in doScan. 24h after fixing the isReady() bootstrap deadlock,
+  // meta_labeler.json still didn't exist despite 247 new trades: the gate was
+  // reachable in theory and unreachable in practice. evaluate_and_trade() is
+  // the one place every engine's decision actually passes through, so this is
+  // where a gate that's supposed to see every trade has to live.
+  {
+    const mktData = market.priceData || {};
+    const metaFeatures = {
+      primary_confidence: (decision.confidence || confidence || 50) / 100,
+      ensemble_agreement: decision._ensembleSpread || 0.1,
+      primary_probability: decision.probability || myProb || 0.5,
+      edge_magnitude: Math.abs(decision.edge || edge || 0),
+      volatility: mktData.volatility || 0,
+      volume_ratio: mktData.volRatio || 1,
+      hour_bin_score: binCountScore(pnlNow.hourStats, new Date().getUTCHours()).score,
+      streak: (pnlNow.streak || 0) / 10,
+      time_to_close: Math.log(Math.max(1, market.ttcMinutes || 60)),
+      dynasty_consensus: decision._dynastyConsensus || 0.5,
+      taker_ratio: mktData.futuresSignals?.takerRatio || 1,
+      oi_delta: mktData.futuresSignals?.oiDelta5m || 0,
+      // This strategy's own track record of moving the underlying its way
+      // (%TP − %SL). Built only from already-resolved trades, so it is
+      // available at entry. Gives the meta-labeler a way to distinguish a
+      // strategy with real directional skill from one whose wins depend on
+      // prices reverting before expiry — two very different risk profiles
+      // that a raw win rate collapses into the same number.
+      directional_edge: pathStats.getDirectionalEdge(decision._childSpec),
+    };
+    // Always attach, regardless of whether the model is ready — this is what
+    // lets it bootstrap. See the comment history above for the deadlock this
+    // avoids: gating collection on isReady() meant it could never become ready.
+    decision._metaFeatures = metaFeatures;
+
+    if (metaLabeler.isReady()) {
+      const metaPred = metaLabeler.predict(metaFeatures);
+      if (metaPred.action === 'VETO') {
+        console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — primary model likely wrong`);
+        recordAdanShadow(decision, market, 'META_LABEL_VETO');
+        return;
+      } else if (metaPred.action === 'REDUCE') {
+        console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — reducing stake 40%`);
+        decision._metaStakeReduction = 0.6;
+      }
+    }
+  }
+
   // Rule 2: Drawdown > 20% → Dream Mode ONCE per episode, then PROBATION — a
   // middle term, not a coma. The old full stop measured drawdown against a
   // frozen peak: with betting vetoed and no open positions left, the fund
@@ -4778,58 +4829,15 @@ async function doScan(state) {
     }
   }
 
-  // ── Concept #20E: Meta-Labeler Gate ──
-  // No isReady() here on purpose — see the comment below on the bootstrap
-  // deadlock. Features are collected on every bet; the model only acts once
-  // it has been trained on them.
-  if (decision.action === 'BET' && decision.market) {
-    const mktData = decision.market.priceData || {};
-    const metaFeatures = {
-      primary_confidence: (decision.confidence || 50) / 100,
-      ensemble_agreement: decision._ensembleSpread || 0.1,
-      primary_probability: decision.probability || decision.myProb || 0.5,
-      edge_magnitude: Math.abs(decision.edge || 0),
-      volatility: mktData.volatility || 0,
-      volume_ratio: mktData.volRatio || 1,
-      hour_bin_score: binCountScore(loadPnL().hourStats, new Date().getUTCHours()).score,
-      streak: (loadPnL().streak || 0) / 10,
-      time_to_close: Math.log(Math.max(1, decision.market.ttcMinutes || 60)),
-      dynasty_consensus: decision._dynastyConsensus || 0.5,
-      taker_ratio: mktData.futuresSignals?.takerRatio || 1,
-      oi_delta: mktData.futuresSignals?.oiDelta5m || 0,
-      // This strategy's own track record of moving the underlying its way
-      // (%TP − %SL). Built only from already-resolved trades, so it is
-      // available at entry. Gives the meta-labeler a way to distinguish a
-      // strategy with real directional skill from one whose wins depend on
-      // prices reverting before expiry — two very different risk profiles
-      // that a raw win rate collapses into the same number.
-      directional_edge: pathStats.getDirectionalEdge(decision._childSpec),
-    };
-    // Always attach the features, regardless of whether the model is ready.
-    // This block used to be gated entirely on metaLabeler.isReady(), which
-    // deadlocked the model permanently: features were only built when ready,
-    // ready required 200 training samples, samples only grew from trades that
-    // carried features. Nothing could ever break the cycle, which is why
-    // meta_labeler.json did not exist after 2223 resolved trades — the whole
-    // veto/reduce layer has been inert since it was written. Collecting
-    // features costs nothing and is what lets it bootstrap.
-    decision._metaFeatures = metaFeatures;
-
-    // Only ACT on the prediction once the model has actually been trained.
-    // An untrained model returns a flat 0.5 for everything; letting that
-    // drive vetoes would be noise wearing a confidence interval.
-    if (metaLabeler.isReady()) {
-      const metaPred = metaLabeler.predict(metaFeatures);
-      if (metaPred.action === 'VETO') {
-        console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — primary model likely wrong`);
-        decision = { ...decision, action: 'SKIP', thought: `⛔ META-LABEL VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}%. ${decision.thought || ''}` };
-      } else if (metaPred.action === 'REDUCE') {
-        console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — reducing stake 40%`);
-        decision._metaStakeReduction = 0.6;
-        decision.thought = (decision.thought || '') + `\n⚠️ META-LABEL: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — stake ×0.6`;
-      }
-    }
-  }
+  // Concept #20E (Meta-Labeler Gate) used to live here. Moved into
+  // evaluate_and_trade() on 2 aug — this point in doScan is only reachable
+  // when ADAN_ORACLE==='on' (parked by default, see the check above), while
+  // real trades come from child-direct/GAUSS calling evaluate_and_trade()
+  // directly and never reaching this line. The gate was dead code from the
+  // moment it was written: 24h after fixing its isReady() bootstrap
+  // deadlock, meta_labeler.json still didn't exist despite 247 new trades.
+  // evaluate_and_trade() is the one place every engine's decision actually
+  // passes through, so a gate meant to see every trade has to live there.
 
   // v9.0: Scenario Forecaster — simulate 3 scenarios before every trade
   if (decision.action === 'BET' && decision.market) {
